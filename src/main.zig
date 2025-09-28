@@ -1,5 +1,8 @@
 const std = @import("std");
 const ts = @import("tree_sitter");
+const testing = std.testing;
+const ArgErr = @import("fmterr.zig").ArgCountErr;
+const FileErr = @import("fmterr.zig").FileErr;
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
 
@@ -8,12 +11,48 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
+    // get arg
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
-    checkArgForPy(args);
+    // check arg count
+    const file = argCount(args) catch |err| switch (err) {
+        ArgErr.ExtraArgs => {
+            std.debug.print("foo\n", .{});
+            std.process.exit(1);
+        },
+        ArgErr.FileArgMissing => {
+            std.debug.print("bar\n", .{});
+            std.process.exit(1);
+        },
+    };
+    // check if python file
+    isPy(file) catch |err| {
+        if (err == FileErr.InvalidFileType) {
+            std.debug.print("not py\n", .{});
+            std.process.exit(1);
+        }
+    };
 
-    // Create a parser for the zig language
+    const python_file = std.fs.cwd().openFile(file, .{}) catch |err| switch (err) {
+        std.fs.File.OpenError.FileNotFound => {
+            std.debug.print("file {s} not found", .{file});
+            std.process.exit(1);
+        },
+        std.fs.File.OpenError.AccessDenied, std.fs.File.OpenError.PermissionDenied => {
+            std.debug.print("file is inaccessible", .{});
+            std.process.exit(1);
+        },
+        else => return err,
+    };
+    defer python_file.close();
+
+    var file_reader = python_file.reader(&.{});
+    const buf = try file_reader.interface.allocRemaining(alloc, .unlimited);
+    defer alloc.free(buf);
+    std.debug.print("{s}", .{buf[0..buf.len]});
+
+    // Create a parser for the python language
     const language = tree_sitter_python();
     defer language.destroy();
 
@@ -27,8 +66,8 @@ pub fn main() !void {
     const tree = parser.parseString(source, null);
     defer tree.?.destroy();
 
-    const node = tree.?.rootNode();
-    printNode(node, source);
+    //const node = tree.?.rootNode();
+    //printNode(node, source);
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {
@@ -47,22 +86,18 @@ fn printNode(node: ts.Node, source: []const u8) void {
     }
 }
 
-fn checkArgForPy(args: [][:0]u8) void {
-    if (args.len < 2) {
-        std.debug.print("No file given\nUsage: {s} <filename.py>\n", .{args[0]});
-        std.process.exit(1);
-    }
-    if (args.len > 2) {
-        std.debug.print("Too many files given\nUsage: {s} <filename.py>\n", .{args[0]});
-        std.process.exit(1);
-    }
-
-    const ext = std.fs.path.extension(args[1]);
-    if (!std.mem.eql(u8, ext, ".py")) {
-        std.debug.print("Incorrect filetype given\nUsage: {s} <filename.py>\n", .{args[0]});
-        std.process.exit(1);
-    }
-
-    std.debug.print("file {s} is ok\n", .{args[1]});
+fn argCount(args: [][:0]u8) ![]const u8 {
+    return switch (args.len) {
+        0 => unreachable,
+        1 => ArgErr.FileArgMissing,
+        2 => args[1],
+        else => ArgErr.ExtraArgs,
+    };
 }
 
+fn isPy(file: []const u8) !void {
+    const ext = std.fs.path.extension(file);
+    if (!std.mem.eql(u8, ext, ".py")) {
+        return FileErr.InvalidFileType;
+    }
+}
