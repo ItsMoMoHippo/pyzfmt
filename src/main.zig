@@ -18,39 +18,49 @@ pub fn main() !void {
     // check arg count
     const file = argCount(args) catch |err| switch (err) {
         ArgErr.ExtraArgs => {
-            std.debug.print("foo\n", .{});
+            std.debug.print(
+                \\User has inputted too many arguments,
+                \\Please input 1 python file only
+            , .{});
             std.process.exit(1);
         },
         ArgErr.FileArgMissing => {
-            std.debug.print("bar\n", .{});
+            std.debug.print(
+                \\User has not inputted a file,
+                \\Please input a pyhton file
+            , .{});
             std.process.exit(1);
         },
     };
     // check if python file
     isPy(file) catch |err| {
         if (err == FileErr.InvalidFileType) {
-            std.debug.print("not py\n", .{});
+            std.debug.print(
+                \\{s} is not a python file,
+                \\Please only input a python file
+            , .{file});
             std.process.exit(1);
         }
     };
 
     const python_file = std.fs.cwd().openFile(file, .{}) catch |err| switch (err) {
         std.fs.File.OpenError.FileNotFound => {
-            std.debug.print("file {s} not found", .{file});
+            std.debug.print("file {s} not found\n", .{file});
             std.process.exit(1);
         },
         std.fs.File.OpenError.AccessDenied, std.fs.File.OpenError.PermissionDenied => {
-            std.debug.print("file is inaccessible", .{});
+            std.debug.print("file is inaccessible\n", .{});
             std.process.exit(1);
         },
         else => return err,
     };
     defer python_file.close();
 
+    //read till end of file
     var file_reader = python_file.reader(&.{});
     const buf = try file_reader.interface.allocRemaining(alloc, .unlimited);
     defer alloc.free(buf);
-    std.debug.print("{s}", .{buf[0..buf.len]});
+    std.debug.print("{s}\n\n", .{buf[0..buf.len]});
 
     // Create a parser for the python language
     const language = tree_sitter_python();
@@ -61,13 +71,13 @@ pub fn main() !void {
     try parser.setLanguage(language);
 
     // Parse some source code and get the root node
-    const source = "def foo(x,y):return x+y";
+    //const source = "def foo(x,y):return x+y";
 
-    const tree = parser.parseString(source, null);
+    const tree = parser.parseString(buf[0..buf.len], null);
     defer tree.?.destroy();
 
-    //const node = tree.?.rootNode();
-    //printNode(node, source);
+    const node = tree.?.rootNode();
+    printNode(node, buf[0..buf.len]);
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {

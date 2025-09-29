@@ -1,6 +1,6 @@
 .{
     .name = .pyzigfmt,
-    .version = "0.0.1",
+    .version = "0.1.0",
     .fingerprint = 0xe389387d124812a7,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
