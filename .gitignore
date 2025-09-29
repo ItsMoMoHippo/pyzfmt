@@ -1,4 +1,3 @@
 zig-out/
 .zig-cache/
-tree-sitter-python/
 test.py
