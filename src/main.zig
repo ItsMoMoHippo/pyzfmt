@@ -1,8 +1,8 @@
 const std = @import("std");
 const ts = @import("tree_sitter");
-const testing = std.testing;
 const ArgErr = @import("fmterr.zig").ArgCountErr;
 const FileErr = @import("fmterr.zig").FileErr;
+const Fmt = @import("fmt.zig").Formatter;
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
 
@@ -60,7 +60,6 @@ pub fn main() !void {
     var file_reader = python_file.reader(&.{});
     const buf = try file_reader.interface.allocRemaining(alloc, .unlimited);
     defer alloc.free(buf);
-    std.debug.print("{s}\n\n", .{buf[0..buf.len]});
 
     // Create a parser for the python language
     const language = tree_sitter_python();
@@ -70,14 +69,20 @@ pub fn main() !void {
     defer parser.destroy();
     try parser.setLanguage(language);
 
-    // Parse some source code and get the root node
-    //const source = "def foo(x,y):return x+y";
-
+    // let ts parse soure code
     const tree = parser.parseString(buf[0..buf.len], null);
     defer tree.?.destroy();
 
-    const node = tree.?.rootNode();
-    printNode(node, buf[0..buf.len]);
+    const root_node = tree.?.rootNode();
+    printNode(root_node, buf[0..buf.len]);
+
+    std.debug.print("\n\n", .{});
+    var formatter = Fmt.init(alloc, buf[0..buf.len]);
+    defer formatter.deinit();
+
+    formatter.format(tree);
+    formatter.printBuf();
+    std.debug.print("{d}", .{formatter.output.items.len});
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {
