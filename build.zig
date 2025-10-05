@@ -19,12 +19,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("tree_sitter", tree_sitter.module("tree_sitter"));
 
-    exe.root_module.addCSourceFile(.{
-        .file = b.path("tree-sitter-python/src/scanner.c"),
-    });
-    exe.root_module.addCSourceFile(.{
-        .file = b.path("tree-sitter-python/src/parser.c"),
-    });
+    exe.root_module.addCSourceFiles(.{ .files = &.{ "tree-sitter-python/src/scanner.c", "tree-sitter-python/src/parser.c" } });
     exe.root_module.link_libc = true;
 
     b.installArtifact(exe);
