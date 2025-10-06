@@ -1,84 +1,111 @@
 const std = @import("std");
 const ts = @import("tree_sitter");
 
-pub const Formatter = struct {
-    allocator: std.mem.Allocator,
+pub const Fmt = struct {
     source: []const u8,
     output: std.ArrayList(u8),
     indent_str: []const u8 = "    ",
 
-    pub fn init(allocator: std.mem.Allocator, source: []const u8) Formatter {
+    pub fn init(allocator: std.mem.Allocator, source: []const u8) !Fmt {
         return .{
-            .allocator = allocator,
             .source = source,
-            .output = .empty,
-            .indent_level = 0,
+            .output = try .initCapacity(allocator, ((3 * source.len) / 2)),
         };
     }
 
-    pub fn format(self: *Formatter, tree: ?*ts.Tree) !void {
-        const root = tree.?.rootNode();
-        try self.formatNode(root, 0);
+    pub fn deinit(self: *Fmt, allocator: std.mem.Allocator) void {
+        self.output.clearAndFree(allocator);
+        self.output.deinit(allocator);
     }
 
-    fn formatNode(self: *Formatter, node: ts.Node, indent: usize) !void {
-        const node_type = NodeKind.fromStr(node);
-        switch (node_type) {}
+    pub fn print(self: *Fmt, stdout: *std.Io.Writer) !void {
+        try stdout.print("output:\n{s}\n", .{self.output.items});
+        try stdout.flush();
+    }
+
+    pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) !void {
+        var cursor = tree.?.walk();
+        try self.formatNode(allocator, &cursor, 0);
+    }
+
+    fn formatNode(self: *Fmt, allocator: std.mem.Allocator, cursor: *ts.TreeCursor, indent: usize) !void {
+        const node = cursor.node();
+        const node_type = NodeType.fromTsNode(node);
+
+        switch (node_type) {
+            .module => {
+                std.debug.print("cursor inside module\n", .{});
+                if (cursor.gotoFirstChild()) {
+                    // std.debug.print("found child", .{});
+                    while (true) {
+                        try self.formatNode(allocator, cursor, indent);
+                        if (!cursor.gotoNextSibling()) break;
+                    }
+                    _ = cursor.gotoParent();
+                }
+            },
+            .assignment => {
+                const lhs = node.namedChild(0).?;
+                const rhs = node.namedChild(1).?;
+
+                const lhs_text = self.source[lhs.startByte()..lhs.endByte()];
+
+                try self.writeIndent(allocator, indent);
+                try self.output.print(allocator, "{s} = ", .{lhs_text});
+
+                var rhs_cursor = rhs.walk();
+                try self.formatNode(allocator, &rhs_cursor, indent);
+                try self.output.appendSlice(allocator, "\n");
+            },
+            .binary_operator => {
+                const lhs = node.namedChild(0).?;
+                const rhs = node.namedChild(1).?;
+
+                var lhs_cursor = lhs.walk();
+                try self.formatNode(allocator, &lhs_cursor, indent);
+
+                const op_text = self.source[node.child(1).?.startByte()..node.child(1).?.endByte()];
+                std.debug.print("{s}\n", .{op_text});
+                try self.output.print(allocator, " {s} ", .{op_text});
+
+                var rhs_cursor = rhs.walk();
+                try self.formatNode(allocator, &rhs_cursor, indent);
+            },
+            .identifier, .integer, .float, .string => {
+                const text = self.source[node.startByte()..node.endByte()];
+                try self.output.appendSlice(allocator, text);
+            },
+            //other node types
+            else => {},
+        }
+    }
+
+    fn printNode(node: ts.Node) void {
+        std.debug.print("{s}", .{@tagName(NodeType.fromTsNode(node))});
+    }
+
+    fn writeIndent(self: *Fmt, allocator: std.mem.Allocator, level: usize) !void {
+        var i: usize = 0;
+        while (i < level) : (i += 1) {
+            try self.output.appendSlice(allocator, self.indent_str);
+        }
     }
 };
 
-const NodeKind = enum {
+const NodeType = enum {
     module,
-    function_definition,
-    class_definition,
-    if_statement,
-    for_statement,
-    while_statement,
-    with_statement,
-    try_statement,
-    match_statement,
-    decorated_definition,
+    assignment,
 
-    return_statement,
-    import_statement,
-    import_from_statement,
-    future_import_statement,
-    assert_statement,
-    break_statement,
-    continue_statement,
-    pass_statement,
-    global_statement,
-    nonlocal_statement,
-    expression_statement,
-    raise_statement,
-    delete_statement,
-    comment,
+    binary_operator,
 
-    fn fromStr(node: ts.Node) NodeKind {
-        const kind = node.kind();
-        if (std.mem.eql(u8, kind, "module")) return .module;
-        if (std.mem.eql(u8, kind, "function_definition")) return .function_definition;
-        if (std.mem.eql(u8, kind, "class_definition")) return .class_definition;
-        if (std.mem.eql(u8, kind, "if_statement")) return .if_statement;
-        if (std.mem.eql(u8, kind, "for_statement")) return .for_statement;
-        if (std.mem.eql(u8, kind, "while_statement")) return .while_statement;
-        if (std.mem.eql(u8, kind, "with_statement")) return .with_statement;
-        if (std.mem.eql(u8, kind, "try_statement")) return .try_statement;
-        if (std.mem.eql(u8, kind, "match_statement")) return .match_statement;
-        if (std.mem.eql(u8, kind, "decorated_definition")) return .decorated_definition;
-        if (std.mem.eql(u8, kind, "return_statement")) return .return_statement;
-        if (std.mem.eql(u8, kind, "import_statement")) return .import_statement;
-        if (std.mem.eql(u8, kind, "import_from_statement")) return .import_from_statement;
-        if (std.mem.eql(u8, kind, "future_import_statement")) return .future_import_statement;
-        if (std.mem.eql(u8, kind, "assert_statement")) return .assert_statement;
-        if (std.mem.eql(u8, kind, "break_statement")) return .break_statement;
-        if (std.mem.eql(u8, kind, "continue_statement")) return .continue_statement;
-        if (std.mem.eql(u8, kind, "pass_statement")) return .pass_statement;
-        if (std.mem.eql(u8, kind, "global_statement")) return .global_statement;
-        if (std.mem.eql(u8, kind, "nonlocal_statement")) return .nonlocal_statement;
-        if (std.mem.eql(u8, kind, "expression_statement")) return .expression_statement;
-        if (std.mem.eql(u8, kind, "raise_statement")) return .raise_statement;
-        if (std.mem.eql(u8, kind, "delete_statement")) return .delete_statement;
-        if (std.mem.eql(u8, kind, "comment")) return .comment;
+    identifier,
+    integer,
+    float,
+    string,
+    //add more nodetypes
+    unknown,
+
+    fn fromTsNode(node: ts.Node) NodeType {
+        return std.meta.stringToEnum(NodeType, node.kind()) orelse .unknown;
     }
 };

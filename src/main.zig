@@ -2,7 +2,7 @@ const std = @import("std");
 const ts = @import("tree_sitter");
 const ArgErr = @import("fmterr.zig").ArgCountErr;
 const FileErr = @import("fmterr.zig").FileErr;
-const Fmt = @import("fmt.zig").Formatter;
+const Fmt = @import("fmt.zig").Fmt;
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
 
@@ -77,12 +77,16 @@ pub fn main() !void {
     printNode(root_node, buf[0..buf.len]);
 
     std.debug.print("\n\n", .{});
-    var formatter = Fmt.init(alloc, buf[0..buf.len]);
-    defer formatter.deinit();
 
-    formatter.format(tree);
-    formatter.printBuf();
-    std.debug.print("{d}", .{formatter.output.items.len});
+    var stdout = std.fs.File.stdout().writer(&.{});
+    const io_writer = &stdout.interface;
+
+    var formatter = try Fmt.init(alloc, buf[0..buf.len]);
+    defer formatter.deinit(alloc);
+
+    std.debug.print("source size:{d}\noutput size:{d}\n", .{ formatter.source.len, formatter.output.capacity });
+    try formatter.format(alloc, tree);
+    try formatter.print(io_writer);
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {
@@ -115,4 +119,12 @@ fn isPy(file: []const u8) !void {
     if (!std.mem.eql(u8, ext, ".py")) {
         return FileErr.InvalidFileType;
     }
+}
+
+test "Not Python file" {
+    try std.testing.expectError(FileErr.InvalidFileType, isPy("foo.txt"));
+}
+
+test "Are Python files" {
+    isPy("../tests/test1.py") catch unreachable;
 }
