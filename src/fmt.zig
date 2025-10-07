@@ -34,9 +34,7 @@ pub const Fmt = struct {
 
         switch (node_type) {
             .module => {
-                std.debug.print("cursor inside module\n", .{});
                 if (cursor.gotoFirstChild()) {
-                    // std.debug.print("found child", .{});
                     while (true) {
                         try self.formatNode(allocator, cursor, indent);
                         if (!cursor.gotoNextSibling()) break;
@@ -44,6 +42,89 @@ pub const Fmt = struct {
                     _ = cursor.gotoParent();
                 }
             },
+            .function_definition => {
+                const name = node.namedChild(0).?;
+                const params = node.namedChild(1).?;
+                const body = node.namedChild(2).?;
+
+                try self.output.print(allocator, "def {s}", .{self.source[name.startByte()..name.endByte()]});
+
+                var params_cursor = params.walk();
+                try self.formatNode(allocator, &params_cursor, 0);
+
+                try self.output.appendSlice(allocator, ":\n");
+
+                var body_cursor = body.walk();
+                try self.formatNode(allocator, &body_cursor, indent + 1);
+
+                try self.output.appendSlice(allocator, "\n");
+            },
+            .parameters => {
+                try self.output.appendSlice(allocator, "(");
+
+                const child_count = node.namedChildCount();
+                var i: u32 = 0;
+                while (i < child_count) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(allocator, &child_cursor, 0);
+
+                    if (i + 1 < child_count) {
+                        try self.output.appendSlice(allocator, ", ");
+                    }
+                }
+
+                try self.output.appendSlice(allocator, ")");
+            },
+            .call => {
+                const func = node.namedChild(0).?;
+                const args = node.namedChild(1).?;
+
+                var func_cursor = func.walk();
+                try self.formatNode(allocator, &func_cursor, 0);
+
+                var args_cursor = args.walk();
+                try self.formatNode(allocator, &args_cursor, 0);
+            },
+            .argument_list => {
+                try self.output.appendSlice(allocator, "(");
+
+                const arg_count = node.namedChildCount();
+                var i: u32 = 0;
+                while (i < arg_count) : (i += 1) {
+                    const arg = node.namedChild(i).?;
+                    var arg_cursor = arg.walk();
+                    try self.formatNode(allocator, &arg_cursor, 0);
+
+                    if (i + 1 < arg_count) try self.output.appendSlice(allocator, ", ");
+                }
+
+                try self.output.appendSlice(allocator, ")");
+            },
+            .return_statement => {
+                const expr = node.namedChild(0) orelse {
+                    try self.output.appendSlice(allocator, "return");
+                    return;
+                };
+
+                try self.output.appendSlice(allocator, "return ");
+
+                var expr_cursor = expr.walk();
+                try self.formatNode(allocator, &expr_cursor, 0);
+            },
+            .block => {
+                var body_cursor = node.walk();
+
+                if (body_cursor.gotoFirstChild()) {
+                    while (true) {
+                        try self.writeIndent(allocator, indent);
+                        try self.formatNode(allocator, &body_cursor, indent);
+                        try self.output.appendSlice(allocator, "\n");
+                        if (!body_cursor.gotoNextSibling()) break;
+                    }
+                }
+            },
+
             .assignment => {
                 const lhs = node.namedChild(0).?;
                 const rhs = node.namedChild(1).?;
@@ -95,6 +176,12 @@ pub const Fmt = struct {
 const NodeType = enum {
     module,
     assignment,
+    function_definition,
+    parameters,
+    call,
+    argument_list,
+    return_statement,
+    block,
 
     binary_operator,
 
