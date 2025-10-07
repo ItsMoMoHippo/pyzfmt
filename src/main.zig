@@ -78,15 +78,17 @@ pub fn main() !void {
 
     std.debug.print("\n\n", .{});
 
-    var stdout = std.fs.File.stdout().writer(&.{});
-    const io_writer = &stdout.interface;
+    var stdout_writer = std.fs.File.stdout().writer(&.{});
+    const stdout = &stdout_writer.interface;
+    var stderr_writer = std.fs.File.stderr().writer(&.{});
+    const stderr = &stderr_writer.interface;
 
-    var formatter = try Fmt.init(alloc, buf[0..buf.len]);
+    var formatter = try Fmt.init(alloc, buf[0..buf.len], stderr);
     defer formatter.deinit(alloc);
 
     std.debug.print("source size:{d}\noutput size:{d}\n", .{ formatter.source.len, formatter.output.capacity });
     try formatter.format(alloc, tree);
-    try formatter.print(io_writer);
+    try formatter.print(stdout);
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {
@@ -126,5 +128,5 @@ test "Not Python file" {
 }
 
 test "Are Python files" {
-    isPy("../tests/test1.py") catch unreachable;
+    isPy("../tests/t1.py") catch unreachable;
 }
