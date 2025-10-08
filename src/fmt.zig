@@ -7,6 +7,7 @@ pub const Fmt = struct {
     indent_str: []const u8 = "    ",
     stderr: *std.Io.Writer,
 
+    /// init the formatter
     pub fn init(allocator: std.mem.Allocator, source: []const u8, stderr: *std.Io.Writer) !Fmt {
         return .{
             .source = source,
@@ -15,21 +16,25 @@ pub const Fmt = struct {
         };
     }
 
+    /// clean up
     pub fn deinit(self: *Fmt, allocator: std.mem.Allocator) void {
         self.output.clearAndFree(allocator);
         self.output.deinit(allocator);
     }
 
+    /// print output to stdout
     pub fn print(self: *Fmt, stdout: *std.Io.Writer) !void {
         try stdout.print("output:\n{s}\n", .{self.output.items});
         try stdout.flush();
     }
 
+    /// try to format given ast
     pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) !void {
         var cursor = tree.?.walk();
         try self.formatNode(allocator, &cursor, 0);
     }
 
+    /// format a node
     fn formatNode(self: *Fmt, allocator: std.mem.Allocator, cursor: *ts.TreeCursor, indent: usize) !void {
         const node = cursor.node();
         const node_type = NodeType.fromTsNode(node);
@@ -125,6 +130,23 @@ pub const Fmt = struct {
                         if (!body_cursor.gotoNextSibling()) break;
                     }
                 }
+            },
+            .while_statement => {
+                std.debug.print("in while statement\n", .{});
+            },
+            .for_statement => {
+                const id = node.namedChild(0).?;
+                try self.output.print(allocator, "for {s} in ", .{self.source[id.startByte()..id.endByte()]});
+
+                const call = node.namedChild(1).?;
+                var call_cursor = call.walk();
+                try self.formatNode(allocator, &call_cursor, 0);
+                try self.output.appendSlice(allocator, ":\n");
+
+                const body = node.namedChild(2).?;
+                var body_cursor = body.walk();
+                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.output.append(allocator, '\n');
             },
             .if_statement => {
                 try self.output.appendSlice(allocator, "if ");
@@ -240,10 +262,23 @@ pub const Fmt = struct {
         }
     }
 
+    /// Prints a node type
     fn printNode(node: ts.Node) void {
         std.debug.print("{s}", .{@tagName(NodeType.fromTsNode(node))});
     }
 
+    /// print number of children and their types
+    fn printNameChildren(node: ts.Node) void {
+        const children = node.namedChildCount();
+        std.debug.print("{d} named child nodes\n", .{children});
+        var i: u32 = 0;
+        while (i < children) : (i += 1) {
+            std.debug.print("{s}\n", .{node.namedChild(i).?.kind()});
+        }
+    }
+
+    /// Writes an indent to output ArrayList
+    /// the indent is given by self.indent_str
     fn writeIndent(self: *Fmt, allocator: std.mem.Allocator, level: usize) !void {
         var i: usize = 0;
         while (i < level) : (i += 1) {
@@ -262,6 +297,9 @@ const NodeType = enum {
     return_statement,
     block,
 
+    for_statement,
+    while_statement,
+
     if_statement,
     elif_clause,
     else_clause,
@@ -277,6 +315,7 @@ const NodeType = enum {
     ERROR,
     unknown,
 
+    /// translate TS node kinds to enums
     fn fromTsNode(node: ts.Node) NodeType {
         return std.meta.stringToEnum(NodeType, node.kind()) orelse .unknown;
     }
