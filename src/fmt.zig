@@ -63,8 +63,30 @@ pub const Fmt = struct {
 
                 var body_cursor = body.walk();
                 try self.formatNode(allocator, &body_cursor, indent + 1);
+            },
+            .class_definition => {
+                const child_count = node.namedChildCount();
+                const name = node.namedChild(0).?;
+                var args: ?ts.Node = null;
+                var body: ?ts.Node = null;
+                if (child_count == 3) {
+                    args = node.namedChild(1).?;
+                    body = node.namedChild(2).?;
+                } else {
+                    body = node.namedChild(1).?;
+                }
 
-                try self.output.append(allocator, '\n');
+                try self.output.print(allocator, "class {s}", .{self.source[name.startByte()..name.endByte()]});
+
+                if (args) |args_list| {
+                    var args_list_cursor = args_list.walk();
+                    try self.formatNode(allocator, &args_list_cursor, indent);
+                }
+
+                try self.output.appendSlice(allocator, ":\n");
+
+                var body_cursor = body.?.walk();
+                try self.formatNode(allocator, &body_cursor, indent + 1);
             },
             .parameters => {
                 try self.output.append(allocator, '(');
@@ -132,7 +154,20 @@ pub const Fmt = struct {
                 }
             },
             .while_statement => {
-                std.debug.print("in while statement\n", .{});
+                printNameChildren(node);
+
+                try self.output.appendSlice(allocator, "while ");
+
+                const cond = node.namedChild(0).?;
+                var cond_cursor = cond.walk();
+                try self.formatNode(allocator, &cond_cursor, 0);
+
+                try self.output.appendSlice(allocator, ":\n");
+
+                const body = node.namedChild(1).?;
+                var body_cursor = body.walk();
+                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.output.append(allocator, '\n');
             },
             .for_statement => {
                 const id = node.namedChild(0).?;
@@ -147,6 +182,13 @@ pub const Fmt = struct {
                 var body_cursor = body.walk();
                 try self.formatNode(allocator, &body_cursor, indent + 1);
                 try self.output.append(allocator, '\n');
+
+                // why does python loop have a possible else clause
+                const possible_else = node.namedChild(3);
+                if (possible_else) |else_clause| {
+                    var else_cursor = else_clause.walk();
+                    try self.formatNode(allocator, &else_cursor, indent);
+                }
             },
             .if_statement => {
                 try self.output.appendSlice(allocator, "if ");
@@ -230,7 +272,24 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &rhs_cursor, indent);
                 try self.output.append(allocator, '\n');
             },
-            .binary_operator, .comparison_operator => {
+            .list => {
+                try self.output.append(allocator, '[');
+
+                const child_count = node.namedChildCount();
+                var i: u32 = 0;
+                while (i < child_count) : (i += 1) {
+                    const elem = node.namedChild(i).?;
+                    const elem_text = self.source[elem.startByte()..elem.endByte()];
+                    try self.output.appendSlice(allocator, elem_text);
+
+                    if (i + 1 < child_count) {
+                        try self.output.appendSlice(allocator, ", ");
+                    }
+                }
+
+                try self.output.append(allocator, ']');
+            },
+            .binary_operator, .comparison_operator, .boolean_operator => {
                 const lhs = node.namedChild(0).?;
                 const rhs = node.namedChild(1).?;
 
@@ -291,11 +350,13 @@ const NodeType = enum {
     module,
     assignment,
     function_definition,
+    class_definition,
     parameters,
     call,
     argument_list,
     return_statement,
     block,
+    list,
 
     for_statement,
     while_statement,
@@ -306,6 +367,7 @@ const NodeType = enum {
 
     binary_operator,
     comparison_operator,
+    boolean_operator,
 
     identifier,
     integer,
