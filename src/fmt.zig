@@ -289,6 +289,24 @@ pub const Fmt = struct {
 
                 try self.output.append(allocator, ']');
             },
+            .unary_operator => {
+                const operand = node.namedChild(0).?;
+
+                const op_text = self.source[node.startByte()..operand.startByte()];
+                try self.output.appendSlice(allocator, op_text);
+
+                var operand_cursor = operand.walk();
+                try self.formatNode(allocator, &operand_cursor, indent);
+            },
+            .not_operator => {
+                const operand = node.namedChild(0).?;
+                const op_text = self.source[node.startByte()..operand.startByte()];
+
+                try self.output.appendSlice(allocator, op_text);
+
+                var operand_cursor = operand.walk();
+                try self.formatNode(allocator, &operand_cursor, indent);
+            },
             .binary_operator, .comparison_operator, .boolean_operator => {
                 const lhs = node.namedChild(0).?;
                 const rhs = node.namedChild(1).?;
@@ -368,6 +386,8 @@ const NodeType = enum {
     binary_operator,
     comparison_operator,
     boolean_operator,
+    unary_operator,
+    not_operator,
 
     identifier,
     integer,
