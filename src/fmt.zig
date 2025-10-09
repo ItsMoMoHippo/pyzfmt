@@ -153,6 +153,14 @@ pub const Fmt = struct {
                     }
                 }
             },
+            .parenthesized_expression => {
+                try self.output.append(allocator, '(');
+
+                const exp = node.namedChild(0).?;
+                var exp_cursor = exp.walk();
+                try self.formatNode(allocator, &exp_cursor, indent);
+                try self.output.append(allocator, ')');
+            },
             .while_statement => {
                 printNameChildren(node);
 
@@ -374,7 +382,7 @@ const NodeType = enum {
     argument_list,
     return_statement,
     block,
-    list,
+    parenthesized_expression,
 
     for_statement,
     while_statement,
@@ -393,6 +401,7 @@ const NodeType = enum {
     integer,
     float,
     string,
+    list,
 
     ERROR,
     unknown,
