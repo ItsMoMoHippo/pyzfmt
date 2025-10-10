@@ -187,17 +187,32 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &attr_cursor, 0);
             },
             .subscript => {
-                self.printNameChildren(node);
-
                 const store = node.namedChild(0).?;
                 var store_cursor = store.walk();
                 try self.formatNode(allocator, &store_cursor, indent);
 
                 try self.output.append(allocator, '[');
+
                 const index = node.namedChild(1).?;
                 var index_cursor = index.walk();
                 try self.formatNode(allocator, &index_cursor, indent);
+
                 try self.output.append(allocator, ']');
+            },
+            .tuple => {
+                self.printNameChildren(node);
+
+                try self.output.append(allocator, '(');
+
+                const named_childs = node.namedChildCount();
+                var i: u32 = 0;
+                while (i < named_childs) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(allocator, &child_cursor, indent);
+                    if (i + 1 < named_childs) try self.output.appendSlice(allocator, ", ");
+                }
+                try self.output.append(allocator, ')');
             },
 
             .for_statement => {
@@ -430,6 +445,7 @@ const NodeType = enum {
     parenthesized_expression,
     attribute,
     subscript,
+    tuple,
 
     for_statement,
     while_statement,
