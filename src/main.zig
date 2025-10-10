@@ -88,6 +88,7 @@ pub fn main() !void {
 
     std.debug.print("source size:{d}\noutput size:{d}\n", .{ formatter.source.len, formatter.output.capacity });
     try formatter.format(alloc, tree);
+    std.debug.print("\n\noutput used : {d} out of {d}\n\n", .{ formatter.output.items.len, formatter.output.capacity });
     try formatter.print(stdout);
 }
 

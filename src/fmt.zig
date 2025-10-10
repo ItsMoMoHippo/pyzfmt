@@ -32,6 +32,7 @@ pub const Fmt = struct {
     pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) !void {
         var cursor = tree.?.walk();
         try self.formatNode(allocator, &cursor, 0);
+        self.removeExtraNewlines();
     }
 
     /// format a node
@@ -40,10 +41,17 @@ pub const Fmt = struct {
         const node_type = NodeType.fromTsNode(node);
 
         switch (node_type) {
-            .module => {
+            .module, .block => {
+                var first = true;
                 if (cursor.gotoFirstChild()) {
                     while (true) {
-                        try self.formatNode(allocator, cursor, indent);
+                        if (!first) try self.output.append(allocator, '\n');
+                        first = false;
+                        try self.writeIndent(allocator, indent);
+
+                        const child = cursor.node();
+                        var child_cursor = child.walk();
+                        try self.formatNode(allocator, &child_cursor, indent);
                         if (!cursor.gotoNextSibling()) break;
                     }
                     _ = cursor.gotoParent();
@@ -63,6 +71,7 @@ pub const Fmt = struct {
 
                 var body_cursor = body.walk();
                 try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.output.append(allocator, '\n');
             },
             .class_definition => {
                 const child_count = node.namedChildCount();
@@ -114,6 +123,13 @@ pub const Fmt = struct {
 
                 var args_cursor = args.walk();
                 try self.formatNode(allocator, &args_cursor, 0);
+
+                // if (node.parent()) |par| {
+                //     const parent_type = NodeType.fromTsNode(par);
+                //     if (parent_type != .assignment and
+                //         parent_type != .call and
+                //         parent_type != .attribute) try self.output.append(allocator, '\n');
+                // }
             },
             .argument_list => {
                 try self.output.append(allocator, '(');
@@ -141,18 +157,17 @@ pub const Fmt = struct {
                 var expr_cursor = expr.walk();
                 try self.formatNode(allocator, &expr_cursor, 0);
             },
-            .block => {
-                var body_cursor = node.walk();
-
-                if (body_cursor.gotoFirstChild()) {
-                    while (true) {
-                        try self.writeIndent(allocator, indent);
-                        try self.formatNode(allocator, &body_cursor, indent);
-                        try self.output.append(allocator, '\n');
-                        if (!body_cursor.gotoNextSibling()) break;
-                    }
-                }
-            },
+            // .block => {
+            //     var body_cursor = node.walk();
+            //
+            //     if (body_cursor.gotoFirstChild()) {
+            //         while (true) {
+            //             try self.writeIndent(allocator, indent);
+            //             try self.formatNode(allocator, &body_cursor, indent);
+            //             if (!body_cursor.gotoNextSibling()) break;
+            //         }
+            //     }
+            // },
             .parenthesized_expression => {
                 try self.output.append(allocator, '(');
 
@@ -161,9 +176,19 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &exp_cursor, indent);
                 try self.output.append(allocator, ')');
             },
-            .while_statement => {
-                printNameChildren(node);
+            .attribute => {
+                const obj = node.namedChild(0).?;
+                const attr = node.namedChild(1).?;
 
+                var obj_cursor = obj.walk();
+                try self.formatNode(allocator, &obj_cursor, 0);
+
+                try self.output.append(allocator, '.');
+
+                var attr_cursor = attr.walk();
+                try self.formatNode(allocator, &attr_cursor, 0);
+            },
+            .while_statement => {
                 try self.output.appendSlice(allocator, "while ");
 
                 const cond = node.namedChild(0).?;
@@ -175,7 +200,6 @@ pub const Fmt = struct {
                 const body = node.namedChild(1).?;
                 var body_cursor = body.walk();
                 try self.formatNode(allocator, &body_cursor, indent + 1);
-                try self.output.append(allocator, '\n');
             },
             .for_statement => {
                 const id = node.namedChild(0).?;
@@ -278,7 +302,10 @@ pub const Fmt = struct {
 
                 var rhs_cursor = rhs.walk();
                 try self.formatNode(allocator, &rhs_cursor, indent);
-                try self.output.append(allocator, '\n');
+
+                // if (NodeType.fromTsNode(rhs) == .call) {
+                //     if (self.output.items[self.output.items.len - 1] == '\n') _ = self.output.pop();
+                // }
             },
             .list => {
                 try self.output.append(allocator, '[');
@@ -323,7 +350,6 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &lhs_cursor, indent);
 
                 const op_text = self.source[node.child(1).?.startByte()..node.child(1).?.endByte()];
-                std.debug.print("{s}\n", .{op_text});
                 try self.output.print(allocator, " {s} ", .{op_text});
 
                 var rhs_cursor = rhs.walk();
@@ -349,16 +375,18 @@ pub const Fmt = struct {
 
     /// Prints a node type
     fn printNode(node: ts.Node) void {
-        std.debug.print("{s}", .{@tagName(NodeType.fromTsNode(node))});
+        std.debug.print("node is :{s}\n", .{@tagName(NodeType.fromTsNode(node))});
     }
 
     /// print number of children and their types
-    fn printNameChildren(node: ts.Node) void {
+    fn printNameChildren(self: *Fmt, node: ts.Node) void {
+        printNode(node);
         const children = node.namedChildCount();
         std.debug.print("{d} named child nodes\n", .{children});
         var i: u32 = 0;
         while (i < children) : (i += 1) {
             std.debug.print("{s}\n", .{node.namedChild(i).?.kind()});
+            std.debug.print("{s}\n", .{self.source[node.namedChild(i).?.startByte()..node.namedChild(i).?.endByte()]});
         }
     }
 
@@ -368,6 +396,23 @@ pub const Fmt = struct {
         var i: usize = 0;
         while (i < level) : (i += 1) {
             try self.output.appendSlice(allocator, self.indent_str);
+        }
+    }
+
+    fn removeExtraNewlines(self: *Fmt) void {
+        var i: usize = 0;
+        while (i < self.output.items.len - 2) {
+            if (self.output.items[i] == '\n' and
+                self.output.items[i + 1] == '\n' and
+                self.output.items[i + 2] == '\n')
+            {
+                _ = self.output.orderedRemove(i + 2);
+            } else {
+                i += 1;
+            }
+        }
+        while (self.output.items[self.output.items.len - 1] == '\n') {
+            _ = self.output.pop();
         }
     }
 };
@@ -383,6 +428,7 @@ const NodeType = enum {
     return_statement,
     block,
     parenthesized_expression,
+    attribute,
 
     for_statement,
     while_statement,
