@@ -43,16 +43,46 @@ pub const Fmt = struct {
         switch (node_type) {
             .module, .block => {
                 var first = true;
+
                 if (cursor.gotoFirstChild()) {
                     while (true) {
-                        if (!first) try self.output.append(allocator, '\n');
+                        const child = cursor.node();
+                        if (!first) {
+                            if (cursor.gotoPreviousSibling()) {
+                                const prev_node = cursor.node();
+
+                                _ = cursor.gotoNextSibling();
+
+                                const gap = self.source[prev_node.endByte()..child.startByte()];
+                                var newline_count: usize = 0;
+                                for (gap) |char| {
+                                    if (char == '\n') newline_count += 1;
+                                }
+
+                                try self.output.append(allocator, '\n');
+
+                                if (newline_count > 1) try self.output.append(allocator, '\n');
+                            } else {
+                                try self.output.append(allocator, '\n');
+                            }
+                        }
+
                         first = false;
                         try self.writeIndent(allocator, indent);
 
-                        const child = cursor.node();
                         var child_cursor = child.walk();
                         try self.formatNode(allocator, &child_cursor, indent);
+
                         if (!cursor.gotoNextSibling()) break;
+
+                        // if (!first) try self.output.append(allocator, '\n');
+                        // first = false;
+                        // try self.writeIndent(allocator, indent);
+                        //
+                        // const child = cursor.node();
+                        // var child_cursor = child.walk();
+                        // try self.formatNode(allocator, &child_cursor, indent);
+                        // if (!cursor.gotoNextSibling()) break;
                     }
                     _ = cursor.gotoParent();
                 }
