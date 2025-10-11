@@ -236,6 +236,26 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &delta_cursor, indent);
             },
 
+            .lambda => {
+                self.printNameChildren(node);
+                try self.output.appendSlice(allocator, "lambda ");
+
+                const param = node.namedChild(0).?;
+                var param_cursor = param.walk();
+                try self.formatNode(allocator, &param_cursor, indent);
+
+                try self.output.appendSlice(allocator, ": ");
+
+                const op = node.namedChild(1).?;
+                var op_cursor = op.walk();
+                try self.formatNode(allocator, &op_cursor, indent);
+            },
+            .lambda_parameters => {
+                const params = node.namedChild(0).?;
+                var params_cursor = params.walk();
+                try self.formatNode(allocator, &params_cursor, indent);
+            },
+
             .for_statement => {
                 const id = node.namedChild(0).?;
                 try self.output.print(allocator, "for {s} in ", .{self.source[id.startByte()..id.endByte()]});
@@ -406,6 +426,7 @@ pub const Fmt = struct {
         }
     }
 
+    /// adds all children nodes and seperate them with a comma
     fn splatChildren(self: *Fmt, allocator: std.mem.Allocator, node: ts.Node) error{ OutOfMemory, WriteFailed }!void {
         const child_count = node.namedChildCount();
         var i: u32 = 0;
@@ -484,7 +505,9 @@ const NodeType = enum {
     pass_statement,
     conditional_expression,
     augmented_assignment,
+
     lambda,
+    lambda_parameters,
 
     for_statement,
     while_statement,
