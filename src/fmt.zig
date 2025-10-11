@@ -18,7 +18,6 @@ pub const Fmt = struct {
 
     /// clean up
     pub fn deinit(self: *Fmt, allocator: std.mem.Allocator) void {
-        self.output.clearAndFree(allocator);
         self.output.deinit(allocator);
     }
 
@@ -247,6 +246,52 @@ pub const Fmt = struct {
                 }
                 try self.output.append(allocator, ')');
             },
+            .default_parameter, .keyword_argument => {
+                const param = node.namedChild(0).?;
+                const value = node.namedChild(1).?;
+
+                var param_cursor = param.walk();
+                try self.formatNode(allocator, &param_cursor, 0);
+                try self.output.appendSlice(allocator, " = ");
+                var value_cursor = value.walk();
+                try self.formatNode(allocator, &value_cursor, 0);
+            },
+            .pass_statement => {
+                try self.output.appendSlice(allocator, "pass");
+            },
+            .conditional_expression => {
+                const first_val = node.namedChild(0).?;
+                const cond = node.namedChild(1).?;
+                const second_val = node.namedChild(2).?;
+
+                var first_val_cursor = first_val.walk();
+                try self.formatNode(allocator, &first_val_cursor, indent);
+
+                try self.output.appendSlice(allocator, " if ");
+
+                var cond_cursor = cond.walk();
+                try self.formatNode(allocator, &cond_cursor, indent);
+
+                try self.output.appendSlice(allocator, " else ");
+
+                var second_val_cursor = second_val.walk();
+                try self.formatNode(allocator, &second_val_cursor, indent);
+            },
+            .augmented_assignment => {
+                const val = node.namedChild(0).?;
+                const delta = node.namedChild(1).?;
+
+                var val_cursor = val.walk();
+                try self.formatNode(allocator, &val_cursor, indent);
+
+                const operand_slice = self.source[val.endByte()..delta.endByte()];
+                const operand_trimmed = std.mem.trim(u8, operand_slice, " \t\r\n");
+                try self.output.append(allocator, ' ');
+                try self.output.appendSlice(allocator, operand_trimmed);
+
+                var delta_cursor = delta.walk();
+                try self.formatNode(allocator, &delta_cursor, indent);
+            },
 
             .for_statement => {
                 const id = node.namedChild(0).?;
@@ -385,6 +430,10 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &operand_cursor, indent);
             },
 
+            .true, .false, .none => {
+                try self.output.appendSlice(allocator, self.source[node.startByte()..node.endByte()]);
+            },
+
             .identifier, .integer, .float, .string => {
                 const text = self.source[node.startByte()..node.endByte()];
                 try self.output.appendSlice(allocator, text);
@@ -485,6 +534,11 @@ const NodeType = enum {
     attribute,
     subscript,
     tuple,
+    default_parameter,
+    pass_statement,
+    conditional_expression,
+    augmented_assignment,
+    keyword_argument,
 
     for_statement,
     while_statement,
@@ -498,6 +552,10 @@ const NodeType = enum {
     boolean_operator,
     unary_operator,
     not_operator,
+
+    true,
+    false,
+    none,
 
     identifier,
     integer,
