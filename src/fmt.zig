@@ -118,6 +118,17 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &body_cursor, indent + 1);
                 try self.output.append(allocator, '\n');
             },
+            .decorated_definition => {
+                self.printNameChildren(node);
+
+                const dec = node.namedChild(0).?;
+                var dec_cursor = dec.walk();
+                try self.formatNode(allocator, &dec_cursor, indent);
+
+                const func = node.namedChild(1).?;
+                var func_cursor = func.walk();
+                try self.formatNode(allocator, &func_cursor, indent);
+            },
             .parameters, .argument_list, .tuple => {
                 try self.output.append(allocator, '(');
                 try self.splatChildren(allocator, node);
@@ -234,6 +245,14 @@ pub const Fmt = struct {
 
                 var delta_cursor = delta.walk();
                 try self.formatNode(allocator, &delta_cursor, indent);
+            },
+            .decorator => {
+                self.printNameChildren(node);
+                const text = node.namedChild(0).?;
+                var text_cursor = text.walk();
+                try self.output.append(allocator, '@');
+                try self.formatNode(allocator, &text_cursor, indent);
+                try self.output.append(allocator, '\n');
             },
 
             .lambda => {
@@ -491,6 +510,7 @@ const NodeType = enum {
     block,
     class_definition,
     function_definition,
+    decorated_definition,
     parameters,
     argument_list,
     tuple,
@@ -505,6 +525,7 @@ const NodeType = enum {
     pass_statement,
     conditional_expression,
     augmented_assignment,
+    decorator,
 
     lambda,
     lambda_parameters,
