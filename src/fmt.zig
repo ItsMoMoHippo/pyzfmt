@@ -28,14 +28,14 @@ pub const Fmt = struct {
     }
 
     /// try to format given ast
-    pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) !void {
+    pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) error{ OutOfMemory, WriteFailed }!void {
         var cursor = tree.?.walk();
         try self.formatNode(allocator, &cursor, 0);
         self.removeExtraNewlines();
     }
 
     /// format a node
-    fn formatNode(self: *Fmt, allocator: std.mem.Allocator, cursor: *ts.TreeCursor, indent: usize) !void {
+    fn formatNode(self: *Fmt, allocator: std.mem.Allocator, cursor: *ts.TreeCursor, indent: usize) error{ OutOfMemory, WriteFailed }!void {
         const node = cursor.node();
         const node_type = NodeType.fromTsNode(node);
 
@@ -46,19 +46,6 @@ pub const Fmt = struct {
                 if (cursor.gotoFirstChild()) {
                     while (true) {
                         const child = cursor.node();
-
-                        // if (std.mem.eql(u8, child.kind(), "comment")) {
-                        //     if (!first) try self.output.append(allocator, '\n');
-                        //     first = false;
-                        //
-                        //     try self.writeIndent(allocator, indent);
-                        //
-                        //     const text = self.source[child.startByte()..child.endByte()];
-                        //     try self.output.appendSlice(allocator, text);
-                        //
-                        //     if (!cursor.gotoNextSibling()) break;
-                        //     continue;
-                        // }
 
                         if (!first) {
                             if (cursor.gotoPreviousSibling()) {
@@ -133,19 +120,7 @@ pub const Fmt = struct {
             },
             .parameters, .argument_list, .tuple => {
                 try self.output.append(allocator, '(');
-
-                const child_count = node.namedChildCount();
-                var i: u32 = 0;
-                while (i < child_count) : (i += 1) {
-                    const child = node.namedChild(i).?;
-                    var child_cursor = child.walk();
-                    try self.formatNode(allocator, &child_cursor, 0);
-
-                    if (i + 1 < child_count) {
-                        try self.output.appendSlice(allocator, ", ");
-                    }
-                }
-
+                try self.splatChildren(allocator, node);
                 try self.output.append(allocator, ')');
             },
             .return_statement => {
@@ -180,10 +155,6 @@ pub const Fmt = struct {
 
                 var rhs_cursor = rhs.walk();
                 try self.formatNode(allocator, &rhs_cursor, indent);
-
-                // if (NodeType.fromTsNode(rhs) == .call) {
-                //     if (self.output.items[self.output.items.len - 1] == '\n') _ = self.output.pop();
-                // }
             },
             .parenthesized_expression => {
                 try self.output.append(allocator, '(');
@@ -412,21 +383,7 @@ pub const Fmt = struct {
             },
             .list => {
                 try self.output.append(allocator, '[');
-
-                // const child_count = node.namedChildCount();
-                // var i: u32 = 0;
-                // while (i < child_count) : (i += 1) {
-                //     const elem = node.namedChild(i).?;
-                //     var elem_cursor = elem.walk();
-                //     try self.formatNode(allocator, &elem_cursor, 0);
-                //
-                //     if (i + 1 < child_count) {
-                //         try self.output.appendSlice(allocator, ", ");
-                //     }
-                // }
-
                 try self.splatChildren(allocator, node);
-
                 try self.output.append(allocator, ']');
             },
 
@@ -449,7 +406,7 @@ pub const Fmt = struct {
         }
     }
 
-    fn splatChildren(self: *Fmt, allocator: std.mem.Allocator, node: ts.Node) !void {
+    fn splatChildren(self: *Fmt, allocator: std.mem.Allocator, node: ts.Node) error{ OutOfMemory, WriteFailed }!void {
         const child_count = node.namedChildCount();
         var i: u32 = 0;
         while (i < child_count) : (i += 1) {
@@ -482,7 +439,7 @@ pub const Fmt = struct {
 
     /// Writes an indent to output ArrayList
     /// the indent is given by self.indent_str
-    fn writeIndent(self: *Fmt, allocator: std.mem.Allocator, level: usize) !void {
+    fn writeIndent(self: *Fmt, allocator: std.mem.Allocator, level: usize) error{ OutOfMemory, WriteFailed }!void {
         var i: usize = 0;
         while (i < level) : (i += 1) {
             try self.output.appendSlice(allocator, self.indent_str);
