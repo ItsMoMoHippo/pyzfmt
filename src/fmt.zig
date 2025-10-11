@@ -47,6 +47,20 @@ pub const Fmt = struct {
                 if (cursor.gotoFirstChild()) {
                     while (true) {
                         const child = cursor.node();
+
+                        // if (std.mem.eql(u8, child.kind(), "comment")) {
+                        //     if (!first) try self.output.append(allocator, '\n');
+                        //     first = false;
+                        //
+                        //     try self.writeIndent(allocator, indent);
+                        //
+                        //     const text = self.source[child.startByte()..child.endByte()];
+                        //     try self.output.appendSlice(allocator, text);
+                        //
+                        //     if (!cursor.gotoNextSibling()) break;
+                        //     continue;
+                        // }
+
                         if (!first) {
                             if (cursor.gotoPreviousSibling()) {
                                 const prev_node = cursor.node();
@@ -74,15 +88,6 @@ pub const Fmt = struct {
                         try self.formatNode(allocator, &child_cursor, indent);
 
                         if (!cursor.gotoNextSibling()) break;
-
-                        // if (!first) try self.output.append(allocator, '\n');
-                        // first = false;
-                        // try self.writeIndent(allocator, indent);
-                        //
-                        // const child = cursor.node();
-                        // var child_cursor = child.walk();
-                        // try self.formatNode(allocator, &child_cursor, indent);
-                        // if (!cursor.gotoNextSibling()) break;
                     }
                     _ = cursor.gotoParent();
                 }
@@ -230,8 +235,6 @@ pub const Fmt = struct {
                 try self.output.append(allocator, ']');
             },
             .tuple => {
-                self.printNameChildren(node);
-
                 try self.output.append(allocator, '(');
 
                 const named_childs = node.namedChildCount();
@@ -393,8 +396,8 @@ pub const Fmt = struct {
                 var i: u32 = 0;
                 while (i < child_count) : (i += 1) {
                     const elem = node.namedChild(i).?;
-                    const elem_text = self.source[elem.startByte()..elem.endByte()];
-                    try self.output.appendSlice(allocator, elem_text);
+                    var elem_cursor = elem.walk();
+                    try self.formatNode(allocator, &elem_cursor, 0);
 
                     if (i + 1 < child_count) {
                         try self.output.appendSlice(allocator, ", ");
@@ -402,6 +405,11 @@ pub const Fmt = struct {
                 }
 
                 try self.output.append(allocator, ']');
+            },
+
+            .comment => {
+                const text = self.source[node.startByte()..node.endByte()];
+                try self.output.appendSlice(allocator, text);
             },
 
             .ERROR => {
@@ -445,6 +453,7 @@ pub const Fmt = struct {
     }
 
     fn removeExtraNewlines(self: *Fmt) void {
+        if (self.output.items.len < 2) return;
         var i: usize = 0;
         while (i < self.output.items.len - 2) {
             if (self.output.items[i] == '\n' and
@@ -495,6 +504,8 @@ const NodeType = enum {
     float,
     string,
     list,
+
+    comment,
 
     ERROR,
     unknown,

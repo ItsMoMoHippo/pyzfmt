@@ -4,6 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // main project
     const exe = b.addExecutable(.{
         .name = "pyzfmt",
         .root_module = b.createModule(.{
@@ -13,15 +14,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // ts bindings
     const tree_sitter = b.dependency("tree_sitter", .{
         .optimize = optimize,
         .target = target,
     });
     exe.root_module.addImport("tree_sitter", tree_sitter.module("tree_sitter"));
 
+    // python grammer
     exe.root_module.addCSourceFiles(.{ .files = &.{ "tree-sitter-python/src/scanner.c", "tree-sitter-python/src/parser.c" } });
     exe.root_module.link_libc = true;
 
+    // build
     b.installArtifact(exe);
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
