@@ -131,7 +131,7 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &body_cursor, indent + 1);
                 try self.output.append(allocator, '\n');
             },
-            .parameters => {
+            .parameters, .argument_list, .tuple => {
                 try self.output.append(allocator, '(');
 
                 const child_count = node.namedChildCount();
@@ -144,21 +144,6 @@ pub const Fmt = struct {
                     if (i + 1 < child_count) {
                         try self.output.appendSlice(allocator, ", ");
                     }
-                }
-
-                try self.output.append(allocator, ')');
-            },
-            .argument_list => {
-                try self.output.append(allocator, '(');
-
-                const arg_count = node.namedChildCount();
-                var i: u32 = 0;
-                while (i < arg_count) : (i += 1) {
-                    const arg = node.namedChild(i).?;
-                    var arg_cursor = arg.walk();
-                    try self.formatNode(allocator, &arg_cursor, 0);
-
-                    if (i + 1 < arg_count) try self.output.appendSlice(allocator, ", ");
                 }
 
                 try self.output.append(allocator, ')');
@@ -232,19 +217,6 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &index_cursor, indent);
 
                 try self.output.append(allocator, ']');
-            },
-            .tuple => {
-                try self.output.append(allocator, '(');
-
-                const named_childs = node.namedChildCount();
-                var i: u32 = 0;
-                while (i < named_childs) : (i += 1) {
-                    const child = node.namedChild(i).?;
-                    var child_cursor = child.walk();
-                    try self.formatNode(allocator, &child_cursor, indent);
-                    if (i + 1 < named_childs) try self.output.appendSlice(allocator, ", ");
-                }
-                try self.output.append(allocator, ')');
             },
             .default_parameter, .keyword_argument => {
                 const param = node.namedChild(0).?;
@@ -441,17 +413,19 @@ pub const Fmt = struct {
             .list => {
                 try self.output.append(allocator, '[');
 
-                const child_count = node.namedChildCount();
-                var i: u32 = 0;
-                while (i < child_count) : (i += 1) {
-                    const elem = node.namedChild(i).?;
-                    var elem_cursor = elem.walk();
-                    try self.formatNode(allocator, &elem_cursor, 0);
+                // const child_count = node.namedChildCount();
+                // var i: u32 = 0;
+                // while (i < child_count) : (i += 1) {
+                //     const elem = node.namedChild(i).?;
+                //     var elem_cursor = elem.walk();
+                //     try self.formatNode(allocator, &elem_cursor, 0);
+                //
+                //     if (i + 1 < child_count) {
+                //         try self.output.appendSlice(allocator, ", ");
+                //     }
+                // }
 
-                    if (i + 1 < child_count) {
-                        try self.output.appendSlice(allocator, ", ");
-                    }
-                }
+                try self.splatChildren(allocator, node);
 
                 try self.output.append(allocator, ']');
             },
@@ -472,6 +446,20 @@ pub const Fmt = struct {
             else => {
                 std.debug.print("{s} node found\n", .{node.kind()});
             },
+        }
+    }
+
+    fn splatChildren(self: *Fmt, allocator: std.mem.Allocator, node: ts.Node) !void {
+        const child_count = node.namedChildCount();
+        var i: u32 = 0;
+        while (i < child_count) : (i += 1) {
+            const elem = node.namedChild(i).?;
+            var elem_cursor = elem.walk();
+            try self.formatNode(allocator, &elem_cursor, 0);
+
+            if (i + 1 < child_count) {
+                try self.output.appendSlice(allocator, ", ");
+            }
         }
     }
 
@@ -527,18 +515,19 @@ const NodeType = enum {
     function_definition,
     parameters,
     argument_list,
+    tuple,
     return_statement,
     call,
     assignment,
     parenthesized_expression,
     attribute,
     subscript,
-    tuple,
     default_parameter,
+    keyword_argument,
     pass_statement,
     conditional_expression,
     augmented_assignment,
-    keyword_argument,
+    lambda,
 
     for_statement,
     while_statement,
