@@ -416,6 +416,33 @@ pub const Fmt = struct {
                 try self.output.appendSlice(allocator, self.source[node.startByte()..node.endByte()]);
             },
 
+            .import_statement => {
+                const import_stat = node.namedChild(0).?;
+                var import_cursor = import_stat.walk();
+                try self.output.appendSlice(allocator, "import ");
+                try self.formatNode(allocator, &import_cursor, indent);
+            },
+            .aliased_import => {
+                const package = node.namedChild(0).?;
+                const alias = node.namedChild(1).?;
+
+                var package_cursor = package.walk();
+                try self.formatNode(allocator, &package_cursor, indent);
+                try self.output.appendSlice(allocator, " as ");
+
+                var alias_cursor = alias.walk();
+                try self.formatNode(allocator, &alias_cursor, indent);
+            },
+            .dotted_name => {
+                const import_stat = node.namedChild(0).?;
+                var import_cursor = import_stat.walk();
+                try self.formatNode(allocator, &import_cursor, indent);
+            },
+            .import_from_statement => {},
+            .wildcard_import => {
+                self.printNameChildren(node);
+            },
+
             .identifier, .integer, .float, .string => {
                 const text = self.source[node.startByte()..node.endByte()];
                 try self.output.appendSlice(allocator, text);
@@ -462,7 +489,7 @@ pub const Fmt = struct {
 
     /// Prints a node type
     fn printNode(node: ts.Node) void {
-        std.debug.print("node is :{s}\n", .{@tagName(NodeType.fromTsNode(node))});
+        std.debug.print("node is: {s}\n", .{@tagName(NodeType.fromTsNode(node))});
     }
 
     /// print number of children and their types
@@ -489,6 +516,7 @@ pub const Fmt = struct {
     fn removeExtraNewlines(self: *Fmt) void {
         if (self.output.items.len < 2) return;
         var i: usize = 0;
+        // make mx 1 space gap between blocks
         while (i < self.output.items.len - 2) {
             if (self.output.items[i] == '\n' and
                 self.output.items[i + 1] == '\n' and
@@ -499,6 +527,7 @@ pub const Fmt = struct {
                 i += 1;
             }
         }
+        // remove trailing /n
         while (self.output.items[self.output.items.len - 1] == '\n') {
             _ = self.output.pop();
         }
@@ -546,6 +575,12 @@ const NodeType = enum {
     true,
     false,
     none,
+
+    import_statement,
+    aliased_import,
+    dotted_name,
+    import_from_statement,
+    wildcard_import,
 
     identifier,
     integer,
