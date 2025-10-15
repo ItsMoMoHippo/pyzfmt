@@ -438,9 +438,26 @@ pub const Fmt = struct {
                 var import_cursor = import_stat.walk();
                 try self.formatNode(allocator, &import_cursor, indent);
             },
-            .import_from_statement => {},
+            .import_from_statement => {
+                try self.output.appendSlice(allocator, "from ");
+
+                const package = node.namedChild(0).?;
+                var package_cursor = package.walk();
+                try self.formatNode(allocator, &package_cursor, indent);
+
+                try self.output.appendSlice(allocator, " import ");
+
+                const components = node.namedChildCount();
+                var i: u32 = 1;
+                while (i < components) : (i += 1) {
+                    const comp = node.namedChild(i).?;
+                    var comp_cursor = comp.walk();
+                    try self.formatNode(allocator, &comp_cursor, indent);
+                    if (i + 1 < components) try self.output.appendSlice(allocator, ", ");
+                }
+            },
             .wildcard_import => {
-                self.printNameChildren(node);
+                try self.output.append(allocator, '*');
             },
 
             .identifier, .integer, .float, .string => {
