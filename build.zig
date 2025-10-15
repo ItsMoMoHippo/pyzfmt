@@ -25,6 +25,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCSourceFiles(.{ .files = &.{ "tree-sitter-python/src/scanner.c", "tree-sitter-python/src/parser.c" } });
     exe.root_module.link_libc = true;
 
+    const fmt = b.addModule("fmt", .{
+        .root_source_file = b.path("src/fmt.zig"),
+    });
+    fmt.addImport("tree_sitter", tree_sitter.module("tree_sitter"));
+
     // build
     b.installArtifact(exe);
     const run_step = b.step("run", "Run the app");
@@ -37,38 +42,21 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
 
-    for (test_targets) |t_target| {
-        const module = b.createModule(.{
-            .root_source_file = b.path("src/testing.zig"),
-            .target = b.resolveTargetQuery(t_target),
-        });
-        module.addImport("tree_sitter", tree_sitter.module("tree_sitter"));
-        const unit_tests = b.addTest(.{ .root_module = module });
+    const module = b.createModule(.{
+        .root_source_file = b.path("test/test.zig"),
+        .target = target,
+    });
+    module.addImport("tree_sitter", tree_sitter.module("tree_sitter"));
+    module.addImport("fmt_module", fmt);
+    const unit_tests = b.addTest(.{
+        .root_module = module,
+        //  .test_runner = .{ .path = serpent_mod.root_source_file.?, .mode = .simple }
+    });
 
-        module.addCSourceFiles(.{ .files = &.{ "tree-sitter-python/src/scanner.c", "tree-sitter-python/src/parser.c" } });
-        module.link_libc = true;
+    module.addCSourceFiles(.{ .files = &.{ "tree-sitter-python/src/scanner.c", "tree-sitter-python/src/parser.c" } });
+    module.link_libc = true;
 
-        const run_unit_tests = b.addRunArtifact(unit_tests);
-        test_step.dependOn(&run_unit_tests.step);
-    }
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    run_unit_tests.has_side_effects = true;
+    test_step.dependOn(&run_unit_tests.step);
 }
-
-const test_targets = [_]std.Target.Query{
-    .{},
-    .{
-        .cpu_arch = .x86_64,
-        .os_tag = .linux,
-    },
-    //.{
-    //    .cpu_arch = .x86_64,
-    //    .os_tag = .windows,
-    //},
-    // .{
-    //     .cpu_arch = .aarch64,
-    //     .os_tag = .macos,
-    // },
-    // .{
-    //     .cpu_arch = .x86_64,
-    //     .os_tag = .macos,
-    // },
-};
