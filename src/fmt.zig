@@ -119,8 +119,6 @@ pub const Fmt = struct {
                 try self.output.append(allocator, '\n');
             },
             .decorated_definition => {
-                self.printNameChildren(node);
-
                 const dec = node.namedChild(0).?;
                 var dec_cursor = dec.walk();
                 try self.formatNode(allocator, &dec_cursor, indent);
@@ -247,7 +245,6 @@ pub const Fmt = struct {
                 try self.formatNode(allocator, &delta_cursor, indent);
             },
             .decorator => {
-                self.printNameChildren(node);
                 const text = node.namedChild(0).?;
                 var text_cursor = text.walk();
                 try self.output.append(allocator, '@');
@@ -255,8 +252,50 @@ pub const Fmt = struct {
                 try self.output.append(allocator, '\n');
             },
 
+            .with_statement => {
+                try self.output.appendSlice(allocator, "with ");
+                const clause = node.namedChild(0).?;
+                var clause_cursor = clause.walk();
+                try self.formatNode(allocator, &clause_cursor, indent);
+
+                const block = node.namedChild(1).?;
+                var block_cursor = block.walk();
+                try self.formatNode(allocator, &block_cursor, indent + 1);
+            },
+            .with_clause => {
+                const children = node.namedChildCount();
+                for (0..children) |i| {
+                    const num: u32 = @intCast(i);
+                    const child = node.namedChild(num).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(allocator, &child_cursor, indent);
+                    if (i + 1 < children) try self.output.appendSlice(allocator, ", ");
+                }
+                try self.output.appendSlice(allocator, ":\n");
+            },
+            .with_item => {
+                const child = node.namedChild(0).?;
+                var child_cursor = child.walk();
+                try self.formatNode(allocator, &child_cursor, indent);
+            },
+            .as_pattern => {
+                const primary = node.namedChild(0).?;
+                var primary_cursor = primary.walk();
+                try self.formatNode(allocator, &primary_cursor, indent);
+
+                try self.output.appendSlice(allocator, " as ");
+
+                const secondary = node.namedChild(1).?;
+                var secondary_cursor = secondary.walk();
+                try self.formatNode(allocator, &secondary_cursor, indent);
+            },
+            .as_pattern_target => {
+                const as = node.namedChild(0).?;
+                var as_cursor = as.walk();
+                try self.formatNode(allocator, &as_cursor, indent);
+            },
+
             .lambda => {
-                self.printNameChildren(node);
                 try self.output.appendSlice(allocator, "lambda ");
 
                 const param = node.namedChild(0).?;
@@ -572,6 +611,12 @@ const NodeType = enum {
     conditional_expression,
     augmented_assignment,
     decorator,
+
+    with_statement,
+    with_clause,
+    with_item,
+    as_pattern,
+    as_pattern_target,
 
     lambda,
     lambda_parameters,
