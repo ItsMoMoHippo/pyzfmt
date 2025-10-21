@@ -144,6 +144,15 @@ pub const Fmt = struct {
                 var rhs_cursor = rhs.walk();
                 try self.formatNode(writer, &rhs_cursor, indent);
             },
+            .parenthesized_expression => {
+                try writer.writeAll("(");
+
+                const exp = node.namedChild(0).?;
+                var exp_cursor = exp.walk();
+                try self.formatNode(writer, &exp_cursor, indent);
+
+                try writer.writeAll(")");
+            },
             .attribute => {
                 const obj = node.namedChild(0).?;
                 const attr = node.namedChild(1).?;
@@ -354,14 +363,14 @@ pub const Fmt = struct {
 
                 try writer.writeAll(":\n");
 
-                const true_block = node.namedChild(0).?;
+                const true_block = node.namedChild(1).?;
                 var true_cursor = true_block.walk();
                 try self.formatNode(writer, &true_cursor, indent + 1);
 
                 const children = node.namedChildCount();
-                if (!(children > 2)) {
-                    try writer.writeAll("\n");
-                }
+                // if (!(children > 2)) {
+                //     try writer.writeAll("\n");
+                // }
 
                 var i: u32 = 2;
                 while (i < children) : (i += 1) {
