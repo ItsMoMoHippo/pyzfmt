@@ -3,45 +3,27 @@ const ts = @import("tree_sitter");
 
 pub const Fmt = struct {
     source: []const u8,
-    output: std.ArrayList(u8),
-    indent_str: []const u8 = "    ",
     stderr: *std.Io.Writer,
 
-    /// init the formatter
-    pub fn init(allocator: std.mem.Allocator, source: []const u8, stderr: *std.Io.Writer) !Fmt {
+    pub fn init(source: []const u8, stderr: *std.Io.Writer) Fmt {
         return .{
             .source = source,
-            .output = try .initCapacity(allocator, ((3 * source.len) / 2)),
             .stderr = stderr,
         };
     }
 
-    /// clean up
-    pub fn deinit(self: *Fmt, allocator: std.mem.Allocator) void {
-        self.output.deinit(allocator);
-    }
-
-    /// print output to stdout
-    pub fn print(self: *Fmt, stdout: *std.Io.Writer) !void {
-        try stdout.print("fmt output:\n{s}\n", .{self.output.items});
-    }
-
-    /// try to format given ast
-    pub fn format(self: *Fmt, allocator: std.mem.Allocator, tree: ?*ts.Tree) error{ OutOfMemory, WriteFailed }!void {
+    pub fn format(self: *Fmt, writer: *std.Io.Writer, tree: ?*ts.Tree) error{WriteFailed}!void {
         var cursor = tree.?.walk();
-        try self.formatNode(allocator, &cursor, 0);
-        self.removeExtraNewlines();
+        try self.formatNode(writer, &cursor, 0);
     }
 
-    /// format a node
-    fn formatNode(self: *Fmt, allocator: std.mem.Allocator, cursor: *ts.TreeCursor, indent: usize) error{ OutOfMemory, WriteFailed }!void {
+    fn formatNode(self: *Fmt, writer: *std.Io.Writer, cursor: *ts.TreeCursor, indent: usize) error{WriteFailed}!void {
         const node = cursor.node();
         const node_type = NodeType.fromTsNode(node);
 
         switch (node_type) {
             .module, .block => {
                 var first = true;
-
                 if (cursor.gotoFirstChild()) {
                     while (true) {
                         const child = cursor.node();
@@ -49,7 +31,6 @@ pub const Fmt = struct {
                         if (!first) {
                             if (cursor.gotoPreviousSibling()) {
                                 const prev_node = cursor.node();
-
                                 _ = cursor.gotoNextSibling();
 
                                 const gap = self.source[prev_node.endByte()..child.startByte()];
@@ -58,19 +39,18 @@ pub const Fmt = struct {
                                     if (char == '\n') newline_count += 1;
                                 }
 
-                                try self.output.append(allocator, '\n');
-
-                                if (newline_count > 1) try self.output.append(allocator, '\n');
+                                try writer.writeAll("\n");
+                                if (newline_count > 1) try writer.writeAll("\n");
                             } else {
-                                try self.output.append(allocator, '\n');
+                                try writer.writeAll("\n");
                             }
                         }
 
                         first = false;
-                        try self.writeIndent(allocator, indent);
+                        try writeIndent(writer, indent);
 
                         var child_cursor = child.walk();
-                        try self.formatNode(allocator, &child_cursor, indent);
+                        try self.formatNode(writer, &child_cursor, indent);
 
                         if (!cursor.gotoNextSibling()) break;
                     }
@@ -89,126 +69,118 @@ pub const Fmt = struct {
                     body = node.namedChild(1).?;
                 }
 
-                try self.output.print(allocator, "class {s}", .{self.source[name.startByte()..name.endByte()]});
+                try writer.writeAll("class ");
+                var name_cursor = name.walk();
+                try self.formatNode(writer, &name_cursor, indent);
 
                 if (args) |args_list| {
-                    var args_list_cursor = args_list.walk();
-                    try self.formatNode(allocator, &args_list_cursor, indent);
+                    var args_cursor = args_list.walk();
+                    try self.formatNode(writer, &args_cursor, indent);
                 }
-
-                try self.output.appendSlice(allocator, ":\n");
+                try writer.writeAll(":\n");
 
                 var body_cursor = body.?.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.formatNode(writer, &body_cursor, indent + 1);
             },
             .function_definition => {
                 const name = node.namedChild(0).?;
                 const params = node.namedChild(1).?;
                 const body = node.namedChild(2).?;
 
-                try self.output.print(allocator, "def {s}", .{self.source[name.startByte()..name.endByte()]});
+                try writer.writeAll("def ");
+                var name_cursor = name.walk();
+                try self.formatNode(writer, &name_cursor, 0);
 
                 var params_cursor = params.walk();
-                try self.formatNode(allocator, &params_cursor, 0);
+                try self.formatNode(writer, &params_cursor, 0);
 
-                try self.output.appendSlice(allocator, ":\n");
+                try writer.writeAll(":\n");
 
                 var body_cursor = body.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
-                try self.output.append(allocator, '\n');
+                try self.formatNode(writer, &body_cursor, indent + 1);
             },
             .decorated_definition => {
                 const dec = node.namedChild(0).?;
                 var dec_cursor = dec.walk();
-                try self.formatNode(allocator, &dec_cursor, indent);
+                try self.formatNode(writer, &dec_cursor, indent);
 
                 const func = node.namedChild(1).?;
                 var func_cursor = func.walk();
-                try self.formatNode(allocator, &func_cursor, indent);
+                try self.formatNode(writer, &func_cursor, indent);
             },
             .parameters, .argument_list, .tuple => {
-                try self.output.append(allocator, '(');
-                try self.splatChildren(allocator, node);
-                try self.output.append(allocator, ')');
+                try writer.writeAll("(");
+                try self.splatChildren(writer, node);
+                try writer.writeAll(")");
             },
             .return_statement => {
                 const expr = node.namedChild(0) orelse {
-                    try self.output.appendSlice(allocator, "return");
+                    try writer.writeAll("return");
                     return;
                 };
 
-                try self.output.appendSlice(allocator, "return ");
-
+                try writer.writeAll("return ");
                 var expr_cursor = expr.walk();
-                try self.formatNode(allocator, &expr_cursor, 0);
+                try self.formatNode(writer, &expr_cursor, 0);
             },
             .call => {
                 const func = node.namedChild(0).?;
                 const args = node.namedChild(1).?;
 
                 var func_cursor = func.walk();
-                try self.formatNode(allocator, &func_cursor, 0);
+                try self.formatNode(writer, &func_cursor, 0);
 
                 var args_cursor = args.walk();
-                try self.formatNode(allocator, &args_cursor, 0);
+                try self.formatNode(writer, &args_cursor, 0);
             },
             .assignment => {
                 const lhs = node.namedChild(0).?;
                 const rhs = node.namedChild(1).?;
 
-                const lhs_text = self.source[lhs.startByte()..lhs.endByte()];
-
-                try self.writeIndent(allocator, indent);
-                try self.output.print(allocator, "{s} = ", .{lhs_text});
+                var lhs_cursor = lhs.walk();
+                try self.formatNode(writer, &lhs_cursor, indent);
+                try writer.writeAll(" = ");
 
                 var rhs_cursor = rhs.walk();
-                try self.formatNode(allocator, &rhs_cursor, indent);
-            },
-            .parenthesized_expression => {
-                try self.output.append(allocator, '(');
-
-                const exp = node.namedChild(0).?;
-                var exp_cursor = exp.walk();
-                try self.formatNode(allocator, &exp_cursor, indent);
-                try self.output.append(allocator, ')');
+                try self.formatNode(writer, &rhs_cursor, indent);
             },
             .attribute => {
                 const obj = node.namedChild(0).?;
                 const attr = node.namedChild(1).?;
 
                 var obj_cursor = obj.walk();
-                try self.formatNode(allocator, &obj_cursor, 0);
+                try self.formatNode(writer, &obj_cursor, 0);
 
-                try self.output.append(allocator, '.');
+                try writer.writeAll(".");
 
                 var attr_cursor = attr.walk();
-                try self.formatNode(allocator, &attr_cursor, 0);
+                try self.formatNode(writer, &attr_cursor, 0);
             },
             .subscript => {
                 const store = node.namedChild(0).?;
                 var store_cursor = store.walk();
-                try self.formatNode(allocator, &store_cursor, indent);
+                try self.formatNode(writer, &store_cursor, indent);
 
-                try self.output.append(allocator, '[');
+                try writer.writeAll("[");
 
                 const index = node.namedChild(1).?;
                 var index_cursor = index.walk();
-                try self.formatNode(allocator, &index_cursor, indent);
+                try self.formatNode(writer, &index_cursor, indent);
 
-                try self.output.append(allocator, ']');
+                try writer.writeAll("]");
             },
             .default_parameter, .keyword_argument => {
                 const param = node.namedChild(0).?;
                 const value = node.namedChild(1).?;
 
                 var param_cursor = param.walk();
-                try self.formatNode(allocator, &param_cursor, 0);
-                try self.output.appendSlice(allocator, " = ");
+                try self.formatNode(writer, &param_cursor, 0);
+                try writer.writeAll(" = ");
                 var value_cursor = value.walk();
-                try self.formatNode(allocator, &value_cursor, 0);
+                try self.formatNode(writer, &value_cursor, 0);
             },
             .pass_statement => {
-                try self.output.appendSlice(allocator, "pass");
+                try writer.writeAll("pass");
             },
             .conditional_expression => {
                 const first_val = node.namedChild(0).?;
@@ -216,50 +188,50 @@ pub const Fmt = struct {
                 const second_val = node.namedChild(2).?;
 
                 var first_val_cursor = first_val.walk();
-                try self.formatNode(allocator, &first_val_cursor, indent);
+                try self.formatNode(writer, &first_val_cursor, indent);
 
-                try self.output.appendSlice(allocator, " if ");
+                try writer.writeAll(" if ");
 
                 var cond_cursor = cond.walk();
-                try self.formatNode(allocator, &cond_cursor, indent);
+                try self.formatNode(writer, &cond_cursor, indent);
 
-                try self.output.appendSlice(allocator, " else ");
+                try writer.writeAll(" else ");
 
                 var second_val_cursor = second_val.walk();
-                try self.formatNode(allocator, &second_val_cursor, indent);
+                try self.formatNode(writer, &second_val_cursor, indent);
             },
             .augmented_assignment => {
                 const val = node.namedChild(0).?;
                 const delta = node.namedChild(1).?;
 
                 var val_cursor = val.walk();
-                try self.formatNode(allocator, &val_cursor, indent);
+                try self.formatNode(writer, &val_cursor, indent);
 
                 const operand_slice = self.source[val.endByte()..delta.endByte()];
                 const operand_trimmed = std.mem.trim(u8, operand_slice, " \t\r\n");
-                try self.output.append(allocator, ' ');
-                try self.output.appendSlice(allocator, operand_trimmed);
+                try writer.writeAll(" ");
+                try writer.writeAll(operand_trimmed);
 
                 var delta_cursor = delta.walk();
-                try self.formatNode(allocator, &delta_cursor, indent);
+                try self.formatNode(writer, &delta_cursor, indent);
             },
             .decorator => {
                 const text = node.namedChild(0).?;
                 var text_cursor = text.walk();
-                try self.output.append(allocator, '@');
-                try self.formatNode(allocator, &text_cursor, indent);
-                try self.output.append(allocator, '\n');
+                try writer.writeAll("@");
+                try self.formatNode(writer, &text_cursor, indent);
+                try writer.writeAll("@");
             },
 
             .with_statement => {
-                try self.output.appendSlice(allocator, "with ");
+                try writer.writeAll("with ");
                 const clause = node.namedChild(0).?;
                 var clause_cursor = clause.walk();
-                try self.formatNode(allocator, &clause_cursor, indent);
+                try self.formatNode(writer, &clause_cursor, indent);
 
                 const block = node.namedChild(1).?;
                 var block_cursor = block.walk();
-                try self.formatNode(allocator, &block_cursor, indent + 1);
+                try self.formatNode(writer, &block_cursor, indent + 1);
             },
             .with_clause => {
                 const children = node.namedChildCount();
@@ -267,191 +239,175 @@ pub const Fmt = struct {
                 while (i < children) : (i += 1) {
                     const child = node.namedChild(i).?;
                     var child_cursor = child.walk();
-                    try self.formatNode(allocator, &child_cursor, indent);
-                    if (i + 1 < children) try self.output.appendSlice(allocator, ", ");
+                    try self.formatNode(writer, &child_cursor, indent);
+                    //could nealy splat
+                    if (i + 1 < children) try writer.writeAll(", ");
                 }
-                try self.output.appendSlice(allocator, ":\n");
-            },
-            .with_item => {
-                const child = node.namedChild(0).?;
-                var child_cursor = child.walk();
-                try self.formatNode(allocator, &child_cursor, indent);
+                try writer.writeAll(":\n");
             },
             .as_pattern => {
                 const primary = node.namedChild(0).?;
                 var primary_cursor = primary.walk();
-                try self.formatNode(allocator, &primary_cursor, indent);
+                try self.formatNode(writer, &primary_cursor, indent);
 
-                try self.output.appendSlice(allocator, " as ");
+                try writer.writeAll(" as ");
 
                 const secondary = node.namedChild(1).?;
                 var secondary_cursor = secondary.walk();
-                try self.formatNode(allocator, &secondary_cursor, indent);
-            },
-            .as_pattern_target => {
-                const as = node.namedChild(0).?;
-                var as_cursor = as.walk();
-                try self.formatNode(allocator, &as_cursor, indent);
+                try self.formatNode(writer, &secondary_cursor, indent);
             },
 
             .try_statement => {
-                try self.output.appendSlice(allocator, "try:\n");
+                try writer.writeAll("try:\n");
                 const try_block = node.namedChild(0).?;
                 var block_cursor = try_block.walk();
-                try self.formatNode(allocator, &block_cursor, indent + 1);
-                try self.output.append(allocator, '\n');
+                try self.formatNode(writer, &block_cursor, indent + 1);
 
                 const children = node.namedChildCount();
                 var i: u32 = 1;
                 while (i < children) : (i += 1) {
                     const child = node.namedChild(i).?;
                     var child_cursor = child.walk();
-                    try self.formatNode(allocator, &child_cursor, indent);
-                    try self.output.append(allocator, '\n');
+                    try self.formatNode(writer, &child_cursor, indent);
+                    try writer.writeAll("\n");
                 }
             },
             .except_clause => {
-                try self.output.appendSlice(allocator, "except ");
+                try writer.writeAll("except ");
 
                 const exception = node.namedChild(0).?;
                 var exception_cursor = exception.walk();
-                try self.formatNode(allocator, &exception_cursor, indent);
+                try self.formatNode(writer, &exception_cursor, indent);
 
-                try self.output.appendSlice(allocator, ":\n");
+                try writer.writeAll(":\n");
 
                 const block = node.namedChild(1).?;
                 var block_cursor = block.walk();
-                try self.formatNode(allocator, &block_cursor, indent + 1);
+                try self.formatNode(writer, &block_cursor, indent + 1);
             },
             .finally_clause => {
-                try self.output.appendSlice(allocator, "finally:\n");
+                try writer.writeAll("finally:\n");
                 const block = node.namedChild(0).?;
                 var block_cursor = block.walk();
-                try self.formatNode(allocator, &block_cursor, indent + 1);
+                try self.formatNode(writer, &block_cursor, indent + 1);
             },
 
             .lambda => {
-                try self.output.appendSlice(allocator, "lambda ");
+                try writer.writeAll("lambda ");
 
                 const param = node.namedChild(0).?;
                 var param_cursor = param.walk();
-                try self.formatNode(allocator, &param_cursor, indent);
+                try self.formatNode(writer, &param_cursor, indent);
 
-                try self.output.appendSlice(allocator, ": ");
+                try writer.writeAll(": ");
 
                 const op = node.namedChild(1).?;
                 var op_cursor = op.walk();
-                try self.formatNode(allocator, &op_cursor, indent);
-            },
-            .lambda_parameters => {
-                const params = node.namedChild(0).?;
-                var params_cursor = params.walk();
-                try self.formatNode(allocator, &params_cursor, indent);
+                try self.formatNode(writer, &op_cursor, indent);
             },
 
             .for_statement => {
                 const id = node.namedChild(0).?;
-                try self.output.print(allocator, "for {s} in ", .{self.source[id.startByte()..id.endByte()]});
+                try writer.writeAll("for ");
+
+                var id_cursor = id.walk();
+                try self.formatNode(writer, &id_cursor, 0);
+
+                try writer.writeAll(" in ");
 
                 const call = node.namedChild(1).?;
                 var call_cursor = call.walk();
-                try self.formatNode(allocator, &call_cursor, 0);
-                try self.output.appendSlice(allocator, ":\n");
+                try self.formatNode(writer, &call_cursor, 0);
+                try writer.writeAll(":\n");
 
                 const body = node.namedChild(2).?;
                 var body_cursor = body.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
-                try self.output.append(allocator, '\n');
+                try self.formatNode(writer, &body_cursor, indent + 1);
+                try writer.writeAll("\n");
 
                 // why does python loop have a possible else clause
                 const possible_else = node.namedChild(3);
                 if (possible_else) |else_clause| {
                     var else_cursor = else_clause.walk();
-                    try self.formatNode(allocator, &else_cursor, indent);
+                    try self.formatNode(writer, &else_cursor, indent);
                 }
             },
             .while_statement => {
-                try self.output.appendSlice(allocator, "while ");
+                try writer.writeAll("while ");
 
                 const cond = node.namedChild(0).?;
                 var cond_cursor = cond.walk();
-                try self.formatNode(allocator, &cond_cursor, 0);
-
-                try self.output.appendSlice(allocator, ":\n");
+                try self.formatNode(writer, &cond_cursor, 0);
+                try writer.writeAll(":\n");
 
                 const body = node.namedChild(1).?;
                 var body_cursor = body.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.formatNode(writer, &body_cursor, indent + 1);
             },
 
             .if_statement => {
-                try self.output.appendSlice(allocator, "if ");
+                try writer.writeAll("if ");
 
                 const cond = node.namedChild(0).?;
                 var cond_cursor = cond.walk();
-                try self.formatNode(allocator, &cond_cursor, indent);
+                try self.formatNode(writer, &cond_cursor, indent);
 
-                try self.output.appendSlice(allocator, ":\n");
+                try writer.writeAll(":\n");
 
-                const true_block = node.namedChild(1).?;
-                var true_block_cursor = true_block.walk();
-                try self.formatNode(allocator, &true_block_cursor, indent + 1);
+                const true_block = node.namedChild(0).?;
+                var true_cursor = true_block.walk();
+                try self.formatNode(writer, &true_cursor, indent + 1);
 
-                const total_children = node.namedChildCount();
-
-                const has_alt_clause = total_children > 2;
-                if (has_alt_clause) {
-                    if (self.output.items[self.output.items.len - 1] == '\n') _ = self.output.pop();
+                const children = node.namedChildCount();
+                if (!(children > 2)) {
+                    try writer.writeAll("\n");
                 }
 
                 var i: u32 = 2;
-                while (i < total_children) : (i += 1) {
+                while (i < children) : (i += 1) {
                     const clause = node.namedChild(i).?;
                     var clause_cursor = clause.walk();
-                    try self.output.append(allocator, '\n');
-                    try self.formatNode(allocator, &clause_cursor, indent);
+                    try self.formatNode(writer, &clause_cursor, indent);
                 }
             },
             .elif_clause => {
-                try self.output.appendSlice(allocator, "elif ");
+                try writer.writeAll("elif ");
+
                 const cond = node.namedChild(0).?;
                 var cond_cursor = cond.walk();
-                try self.formatNode(allocator, &cond_cursor, indent);
+                try self.formatNode(writer, &cond_cursor, indent);
 
-                try self.output.appendSlice(allocator, ":\n");
+                try writer.writeAll(":\n");
 
                 const body = node.namedChild(1).?;
                 var body_cursor = body.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.formatNode(writer, &body_cursor, indent + 1);
 
                 const parent = node.parent();
                 if (parent) |p| {
-                    const total = p.namedChildCount();
+                    const p_children = p.namedChildCount();
                     var node_index: ?u32 = null;
 
                     var i: u32 = 0;
-                    while (i < total) : (i += 1) {
+                    while (i < p_children) : (i += 1) {
                         if (p.namedChild(i).?.eql(node)) {
                             node_index = i;
                             break;
                         }
                     }
 
-                    if (node_index != null and node_index.? + 1 < total) {
-                        const next_sibling = p.namedChild(node_index.? + 1).?;
-                        const sibling_kind = NodeType.fromTsNode(next_sibling);
-                        if (sibling_kind == .elif_clause or sibling_kind == .else_clause) {
-                            if (self.output.items[self.output.items.len - 1] == '\n') _ = self.output.pop();
-                        }
+                    if (node_index != null and node_index.? + 1 == p_children) {
+                        try writer.writeAll("\n");
                     }
                 }
             },
             .else_clause => {
-                try self.output.appendSlice(allocator, "else:\n");
+                try writer.writeAll("else:\n");
 
                 const body = node.namedChild(0).?;
                 var body_cursor = body.walk();
-                try self.formatNode(allocator, &body_cursor, indent + 1);
+                try self.formatNode(writer, &body_cursor, indent + 1);
+                try writer.writeAll("\n");
             },
 
             .binary_operator, .comparison_operator, .boolean_operator => {
@@ -459,103 +415,86 @@ pub const Fmt = struct {
                 const rhs = node.namedChild(1).?;
 
                 var lhs_cursor = lhs.walk();
-                try self.formatNode(allocator, &lhs_cursor, indent);
+                try self.formatNode(writer, &lhs_cursor, indent);
 
                 const op_text = self.source[node.child(1).?.startByte()..node.child(1).?.endByte()];
-                try self.output.print(allocator, " {s} ", .{op_text});
+                try writer.writeAll(" ");
+                try writer.writeAll(op_text);
+                try writer.writeAll(" ");
 
                 var rhs_cursor = rhs.walk();
-                try self.formatNode(allocator, &rhs_cursor, indent);
+                try self.formatNode(writer, &rhs_cursor, indent);
             },
-            .unary_operator => {
+            .unary_operator, .not_operator => {
                 const operand = node.namedChild(0).?;
 
                 const op_text = self.source[node.startByte()..operand.startByte()];
-                try self.output.appendSlice(allocator, op_text);
+                try writer.writeAll(op_text);
 
-                var operand_cursor = operand.walk();
-                try self.formatNode(allocator, &operand_cursor, indent);
-            },
-            .not_operator => {
-                const operand = node.namedChild(0).?;
-                const op_text = self.source[node.startByte()..operand.startByte()];
-
-                try self.output.appendSlice(allocator, op_text);
-
-                var operand_cursor = operand.walk();
-                try self.formatNode(allocator, &operand_cursor, indent);
-            },
-
-            .true, .false, .none => {
-                try self.output.appendSlice(allocator, self.source[node.startByte()..node.endByte()]);
+                var rhs_cursor = operand.walk();
+                try self.formatNode(writer, &rhs_cursor, indent);
             },
 
             .import_statement => {
                 const import_stat = node.namedChild(0).?;
                 var import_cursor = import_stat.walk();
-                try self.output.appendSlice(allocator, "import ");
-                try self.formatNode(allocator, &import_cursor, indent);
+                try writer.writeAll("import ");
+                try self.formatNode(writer, &import_cursor, indent);
             },
             .aliased_import => {
                 const package = node.namedChild(0).?;
                 const alias = node.namedChild(1).?;
 
                 var package_cursor = package.walk();
-                try self.formatNode(allocator, &package_cursor, indent);
-                try self.output.appendSlice(allocator, " as ");
+                try self.formatNode(writer, &package_cursor, indent);
+
+                try writer.writeAll(" as ");
 
                 var alias_cursor = alias.walk();
-                try self.formatNode(allocator, &alias_cursor, indent);
-            },
-            .dotted_name => {
-                const import_stat = node.namedChild(0).?;
-                var import_cursor = import_stat.walk();
-                try self.formatNode(allocator, &import_cursor, indent);
+                try self.formatNode(writer, &alias_cursor, indent);
             },
             .import_from_statement => {
-                try self.output.appendSlice(allocator, "from ");
+                try writer.writeAll("from ");
 
                 const package = node.namedChild(0).?;
                 var package_cursor = package.walk();
-                try self.formatNode(allocator, &package_cursor, indent);
+                try self.formatNode(writer, &package_cursor, indent);
 
-                try self.output.appendSlice(allocator, " import ");
+                try writer.writeAll(" import ");
 
                 const components = node.namedChildCount();
                 var i: u32 = 1;
                 while (i < components) : (i += 1) {
                     const comp = node.namedChild(i).?;
                     var comp_cursor = comp.walk();
-                    try self.formatNode(allocator, &comp_cursor, indent);
-                    if (i + 1 < components) try self.output.appendSlice(allocator, ", ");
+                    try self.formatNode(writer, &comp_cursor, indent);
+                    // so close to being able to use splat
+                    // but 1st child is package so ruins splatting
+                    if (i + 1 < components) try writer.writeAll(", ");
                 }
             },
             .wildcard_import => {
-                try self.output.append(allocator, '*');
+                try writer.writeAll("*");
             },
 
-            .identifier, .integer, .float, .string => {
+            .identifier, .integer, .float, .comment, .true, .false, .none, .string => {
                 const text = self.source[node.startByte()..node.endByte()];
-                try self.output.appendSlice(allocator, text);
+                try writer.writeAll(text);
+            },
+            .with_item, .dotted_name, .lambda_parameters, .as_pattern_target => {
+                const child = node.namedChild(0).?;
+                var child_cursor = child.walk();
+                try self.formatNode(writer, &child_cursor, indent);
             },
             .list => {
-                try self.output.append(allocator, '[');
-                try self.splatChildren(allocator, node);
-                try self.output.append(allocator, ']');
-            },
-
-            .comment => {
-                const text = self.source[node.startByte()..node.endByte()];
-                try self.output.appendSlice(allocator, text);
+                try writer.writeAll("[");
+                try self.splatChildren(writer, node);
+                try writer.writeAll("]");
             },
 
             .ERROR => {
-                const start = node.startByte();
-                const end = node.endByte();
-                const text = self.source[start..end];
-
-                try self.output.print(allocator, "{s}\n", .{text});
-                try self.stderr.print("ERROR encountered during formatting...\n", .{});
+                std.debug.print("error\n", .{});
+                //TODO: just abort operation, maybe say which line is error
             },
             else => {
                 std.debug.print("{s} node found\n", .{node.kind()});
@@ -563,64 +502,47 @@ pub const Fmt = struct {
         }
     }
 
-    /// adds all children nodes and seperate them with a comma
-    fn splatChildren(self: *Fmt, allocator: std.mem.Allocator, node: ts.Node) error{ OutOfMemory, WriteFailed }!void {
+    /// adds all children nodes and seperate with a comma
+    /// useful for writing:
+    /// - Lists
+    /// - Argument list
+    /// - Sets
+    /// - Dicts
+    /// - Parameters
+    fn splatChildren(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
         const child_count = node.namedChildCount();
         var i: u32 = 0;
         while (i < child_count) : (i += 1) {
             const elem = node.namedChild(i).?;
             var elem_cursor = elem.walk();
-            try self.formatNode(allocator, &elem_cursor, 0);
+            try self.formatNode(writer, &elem_cursor, 0);
 
             if (i + 1 < child_count) {
-                try self.output.appendSlice(allocator, ", ");
+                try writer.writeAll(", ");
             }
         }
     }
 
-    /// Prints a node type
-    fn printNode(node: ts.Node) void {
-        std.debug.print("node is: {s}\n", .{@tagName(NodeType.fromTsNode(node))});
-    }
-
-    /// print number of children and their types
-    fn printNameChildren(self: *Fmt, node: ts.Node) void {
-        printNode(node);
-        const children = node.namedChildCount();
-        std.debug.print("{d} named child nodes\n", .{children});
-        var i: u32 = 0;
-        while (i < children) : (i += 1) {
-            std.debug.print("child {d} = {s}\n", .{ i, node.namedChild(i).?.kind() });
-            std.debug.print("{s}\n", .{self.source[node.namedChild(i).?.startByte()..node.namedChild(i).?.endByte()]});
-        }
-    }
-
-    /// Writes an indent to output ArrayList
-    /// the indent is given by self.indent_str
-    fn writeIndent(self: *Fmt, allocator: std.mem.Allocator, level: usize) error{ OutOfMemory, WriteFailed }!void {
+    fn writeIndent(writer: *std.Io.Writer, level: usize) !void {
         var i: usize = 0;
         while (i < level) : (i += 1) {
-            try self.output.appendSlice(allocator, self.indent_str);
+            try writer.writeAll("    ");
         }
     }
 
-    fn removeExtraNewlines(self: *Fmt) void {
-        if (self.output.items.len < 2) return;
-        var i: usize = 0;
-        // make mx 1 space gap between blocks
-        while (i < self.output.items.len - 2) {
-            if (self.output.items[i] == '\n' and
-                self.output.items[i + 1] == '\n' and
-                self.output.items[i + 2] == '\n')
-            {
-                _ = self.output.orderedRemove(i + 2);
-            } else {
-                i += 1;
-            }
-        }
-        // remove trailing /n
-        while (self.output.items[self.output.items.len - 1] == '\n') {
-            _ = self.output.pop();
+    /// Prints debug info for a node
+    /// First prints name
+    /// Then number of children
+    /// Then each child, including their type and thier content
+    fn nodeDebugInfo(self: *Fmt, node: ts.Node) void {
+        std.debug.print("node is: {s}\n", .{@tagName(NodeType.fromTsNode(node))});
+        const children = node.namedChildCount();
+        std.debug.print("node has {d} child nodes\n", .{children});
+        var i: u32 = 0;
+        while (i < children) : (i += 1) {
+            const child = node.namedChild(i).?;
+            std.debug.print("child {d} = {s}\n", .{ i, child.kind() });
+            std.debug.print("{s}\n", .{self.source[child.startByte()..child.endByte()]});
         }
     }
 };
@@ -649,16 +571,13 @@ const NodeType = enum {
 
     with_statement,
     with_clause,
-    with_item,
     as_pattern,
-    as_pattern_target,
 
     try_statement,
     except_clause,
     finally_clause,
 
     lambda,
-    lambda_parameters,
 
     for_statement,
     while_statement,
@@ -673,23 +592,24 @@ const NodeType = enum {
     unary_operator,
     not_operator,
 
-    true,
-    false,
-    none,
-
     import_statement,
     aliased_import,
-    dotted_name,
     import_from_statement,
     wildcard_import,
 
     identifier,
     integer,
     float,
-    string,
-    list,
-
     comment,
+    true,
+    false,
+    none,
+    string,
+    with_item,
+    dotted_name,
+    lambda_parameters,
+    as_pattern_target,
+    list,
 
     ERROR,
     unknown,
