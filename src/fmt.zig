@@ -23,8 +23,7 @@ pub const Fmt = struct {
 
     /// print output to stdout
     pub fn print(self: *Fmt, stdout: *std.Io.Writer) !void {
-        try stdout.print("output:\n{s}\n", .{self.output.items});
-        try stdout.flush();
+        try stdout.print("fmt output:\n{s}\n", .{self.output.items});
     }
 
     /// try to format given ast
@@ -264,9 +263,9 @@ pub const Fmt = struct {
             },
             .with_clause => {
                 const children = node.namedChildCount();
-                for (0..children) |i| {
-                    const num: u32 = @intCast(i);
-                    const child = node.namedChild(num).?;
+                var i: u32 = 0;
+                while (i < children) : (i += 1) {
+                    const child = node.namedChild(i).?;
                     var child_cursor = child.walk();
                     try self.formatNode(allocator, &child_cursor, indent);
                     if (i + 1 < children) try self.output.appendSlice(allocator, ", ");
@@ -293,6 +292,42 @@ pub const Fmt = struct {
                 const as = node.namedChild(0).?;
                 var as_cursor = as.walk();
                 try self.formatNode(allocator, &as_cursor, indent);
+            },
+
+            .try_statement => {
+                try self.output.appendSlice(allocator, "try:\n");
+                const try_block = node.namedChild(0).?;
+                var block_cursor = try_block.walk();
+                try self.formatNode(allocator, &block_cursor, indent + 1);
+                try self.output.append(allocator, '\n');
+
+                const children = node.namedChildCount();
+                var i: u32 = 1;
+                while (i < children) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(allocator, &child_cursor, indent);
+                    try self.output.append(allocator, '\n');
+                }
+            },
+            .except_clause => {
+                try self.output.appendSlice(allocator, "except ");
+
+                const exception = node.namedChild(0).?;
+                var exception_cursor = exception.walk();
+                try self.formatNode(allocator, &exception_cursor, indent);
+
+                try self.output.appendSlice(allocator, ":\n");
+
+                const block = node.namedChild(1).?;
+                var block_cursor = block.walk();
+                try self.formatNode(allocator, &block_cursor, indent + 1);
+            },
+            .finally_clause => {
+                try self.output.appendSlice(allocator, "finally:\n");
+                const block = node.namedChild(0).?;
+                var block_cursor = block.walk();
+                try self.formatNode(allocator, &block_cursor, indent + 1);
             },
 
             .lambda => {
@@ -617,6 +652,10 @@ const NodeType = enum {
     with_item,
     as_pattern,
     as_pattern_target,
+
+    try_statement,
+    except_clause,
+    finally_clause,
 
     lambda,
     lambda_parameters,

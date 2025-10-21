@@ -2,7 +2,8 @@ const std = @import("std");
 const ts = @import("tree_sitter");
 const ArgErr = @import("fmterr.zig").ArgCountErr;
 const FileErr = @import("fmterr.zig").FileErr;
-const Fmt = @import("fmt.zig").Fmt;
+// const Fmt = @import("fmt.zig").Fmt;
+const foo = @import("fmt2.zig");
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
 
@@ -78,18 +79,29 @@ pub fn main() !void {
 
     std.debug.print("\n\n", .{});
 
-    var stdout_writer = std.fs.File.stdout().writer(&.{});
-    const stdout = &stdout_writer.interface;
+    // var stdout_writer = std.fs.File.stdout().writer(&.{});
+    // const stdout = &stdout_writer.interface;
     var stderr_writer = std.fs.File.stderr().writer(&.{});
     const stderr = &stderr_writer.interface;
 
-    var formatter = try Fmt.init(alloc, buf[0..buf.len], stderr);
-    defer formatter.deinit(alloc);
+    var aw: std.Io.Writer.Allocating = try .initCapacity(alloc, buf.len);
+    defer aw.deinit();
+    const w = &aw.writer;
 
-    std.debug.print("source size:{d}\noutput size:{d}\n", .{ formatter.source.len, formatter.output.capacity });
-    try formatter.format(alloc, tree);
-    std.debug.print("\n\noutput used : {d} out of {d}\n\n", .{ formatter.output.items.len, formatter.output.capacity });
-    try formatter.print(stdout);
+    var bar = foo.Fmt.init(buf[0..buf.len], stderr);
+    try bar.format(w, tree);
+
+    try w.flush();
+
+    std.debug.print("{s}\n", .{aw.written()});
+
+    // var formatter = try Fmt.init(alloc, buf[0..buf.len], stderr);
+    // defer formatter.deinit(alloc);
+    //
+    // std.debug.print("source size:{d}\noutput size:{d}\n", .{ formatter.source.len, formatter.output.capacity });
+    // try formatter.format(alloc, tree);
+    // std.debug.print("\n\noutput used : {d} out of {d}\n\n", .{ formatter.output.items.len, formatter.output.capacity });
+    // try formatter.print(stdout);
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {
