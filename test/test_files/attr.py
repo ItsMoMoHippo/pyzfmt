@@ -1,3 +1,4 @@
+# attributes
 person.name = "Alice"
 print(person.age)
 foo.bar.baz
