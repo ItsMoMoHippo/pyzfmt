@@ -220,10 +220,11 @@ pub const Fmt = struct {
                 var val_cursor = val.walk();
                 try self.formatNode(writer, &val_cursor, indent);
 
-                const operand_slice = self.source[val.endByte()..delta.endByte()];
+                const operand_slice = self.source[val.endByte()..delta.startByte()];
                 const operand_trimmed = std.mem.trim(u8, operand_slice, " \t\r\n");
                 try writer.writeAll(" ");
                 try writer.writeAll(operand_trimmed);
+                try writer.writeAll(" ");
 
                 var delta_cursor = delta.walk();
                 try self.formatNode(writer, &delta_cursor, indent);
