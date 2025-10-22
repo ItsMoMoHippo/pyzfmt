@@ -538,6 +538,48 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &value_cursor, 0);
             },
 
+            .list_comprehension => {
+                try writer.writeAll("[");
+                var i: u32 = 0;
+                while (i < node.namedChildCount()) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(writer, &child_cursor, 0);
+                    if (i + 1 < node.namedChildCount()) try writer.writeAll(" ");
+                }
+                try writer.writeAll("]");
+            },
+            .dictionary_comprehension, .set_comprehension => {
+                try writer.writeAll("{");
+                var i: u32 = 0;
+                while (i < node.namedChildCount()) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(writer, &child_cursor, 0);
+                    if (i + 1 < node.namedChildCount()) try writer.writeAll(" ");
+                }
+                try writer.writeAll("}");
+            },
+            .for_in_clause => {
+                try writer.writeAll("for ");
+
+                const vari = node.namedChild(0).?;
+                var vari_cursor = vari.walk();
+                try self.formatNode(writer, &vari_cursor, 0);
+
+                try writer.writeAll(" in ");
+
+                const range = node.namedChild(1).?;
+                var range_cursor = range.walk();
+                try self.formatNode(writer, &range_cursor, 0);
+            },
+            .if_clause => {
+                try writer.writeAll("if ");
+                const child = node.namedChild(0).?;
+                var child_cursor = child.walk();
+                try self.formatNode(writer, &child_cursor, indent);
+            },
+
             .ERROR => {
                 std.debug.print("error\n", .{});
                 //TODO: just abort operation, maybe say which line is error
@@ -590,6 +632,7 @@ pub const Fmt = struct {
             std.debug.print("child {d} = {s}\n", .{ i, child.kind() });
             std.debug.print("{s}\n", .{self.source[child.startByte()..child.endByte()]});
         }
+        std.debug.print("\n", .{});
     }
 };
 
@@ -659,6 +702,12 @@ const NodeType = enum {
     dictionary,
     set,
     pair,
+
+    list_comprehension,
+    set_comprehension,
+    dictionary_comprehension,
+    for_in_clause,
+    if_clause,
 
     ERROR,
     unknown,
