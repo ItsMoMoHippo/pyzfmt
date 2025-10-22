@@ -520,6 +520,23 @@ pub const Fmt = struct {
                 try self.splatChildren(writer, node);
                 try writer.writeAll("]");
             },
+            .dictionary, .set => {
+                try writer.writeAll("{");
+                try self.splatChildren(writer, node);
+                try writer.writeAll("}");
+            },
+            .pair => {
+                const key = node.namedChild(0).?;
+                const value = node.namedChild(1).?;
+
+                var key_cursor = key.walk();
+                try self.formatNode(writer, &key_cursor, 0);
+
+                try writer.writeAll(" : ");
+
+                var value_cursor = value.walk();
+                try self.formatNode(writer, &value_cursor, 0);
+            },
 
             .ERROR => {
                 std.debug.print("error\n", .{});
@@ -639,6 +656,9 @@ const NodeType = enum {
     lambda_parameters,
     as_pattern_target,
     list,
+    dictionary,
+    set,
+    pair,
 
     ERROR,
     unknown,

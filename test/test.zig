@@ -374,7 +374,7 @@ test "attr" {
 }
 test "parens" {
     const alloc = t.allocator;
-    const input = @embedFile("test_files/parens.py");
+    const input = @embedFile("test_files/brackets/parens.py");
 
     const lang = tree_sitter_python();
     defer lang.destroy();
@@ -452,7 +452,7 @@ test "conds" {
 }
 test "tuples" {
     const alloc = t.allocator;
-    const input = @embedFile("test_files/tuples.py");
+    const input = @embedFile("test_files/brackets/tuples.py");
 
     const lang = tree_sitter_python();
     defer lang.destroy();
@@ -739,6 +739,58 @@ test "try_2_exc" {
 test "try_2_exc_final" {
     const alloc = t.allocator;
     const input = @embedFile("test_files/try/try_exc_exc_final.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "set" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/brackets/set.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "dict" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/brackets/dict.py");
 
     const lang = tree_sitter_python();
     defer lang.destroy();
