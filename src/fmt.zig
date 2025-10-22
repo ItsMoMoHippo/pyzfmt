@@ -112,7 +112,7 @@ pub const Fmt = struct {
                 var func_cursor = func.walk();
                 try self.formatNode(writer, &func_cursor, indent);
             },
-            .parameters, .argument_list, .tuple => {
+            .parameters, .argument_list, .tuple, .tuple_pattern => {
                 try writer.writeAll("(");
                 try self.splatChildren(writer, node);
                 try writer.writeAll(")");
@@ -248,15 +248,7 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &block_cursor, indent + 1);
             },
             .with_clause => {
-                const children = node.namedChildCount();
-                var i: u32 = 0;
-                while (i < children) : (i += 1) {
-                    const child = node.namedChild(i).?;
-                    var child_cursor = child.walk();
-                    try self.formatNode(writer, &child_cursor, indent);
-                    //could nealy splat
-                    if (i + 1 < children) try writer.writeAll(", ");
-                }
+                try self.splatChildren(writer, node);
                 try writer.writeAll(":\n");
             },
             .as_pattern => {
@@ -278,6 +270,7 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &block_cursor, indent + 1);
                 try writer.writeAll("\n");
 
+                // could nearly splat, off by 1
                 const children = node.namedChildCount();
                 var i: u32 = 1;
                 while (i < children) : (i += 1) {
@@ -515,7 +508,7 @@ pub const Fmt = struct {
                 var child_cursor = child.walk();
                 try self.formatNode(writer, &child_cursor, indent);
             },
-            .list => {
+            .list, .list_pattern => {
                 try writer.writeAll("[");
                 try self.splatChildren(writer, node);
                 try writer.writeAll("]");
@@ -536,6 +529,18 @@ pub const Fmt = struct {
 
                 var value_cursor = value.walk();
                 try self.formatNode(writer, &value_cursor, 0);
+            },
+            .pattern_list => {
+                try self.splatChildren(writer, node);
+            },
+            .expression_list => {
+                try self.splatChildren(writer, node);
+            },
+            .list_splat_pattern => {
+                try writer.writeAll("*");
+                const child = node.namedChild(0).?;
+                var child_cursor = child.walk();
+                try self.formatNode(writer, &child_cursor, indent);
             },
 
             .list_comprehension => {
@@ -702,6 +707,11 @@ const NodeType = enum {
     dictionary,
     set,
     pair,
+    pattern_list,
+    expression_list,
+    list_splat_pattern,
+    list_pattern,
+    tuple_pattern,
 
     list_comprehension,
     set_comprehension,
