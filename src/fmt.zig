@@ -276,6 +276,7 @@ pub const Fmt = struct {
                 const try_block = node.namedChild(0).?;
                 var block_cursor = try_block.walk();
                 try self.formatNode(writer, &block_cursor, indent + 1);
+                try writer.writeAll("\n");
 
                 const children = node.namedChildCount();
                 var i: u32 = 1;
@@ -283,7 +284,6 @@ pub const Fmt = struct {
                     const child = node.namedChild(i).?;
                     var child_cursor = child.walk();
                     try self.formatNode(writer, &child_cursor, indent);
-                    try writer.writeAll("\n");
                 }
             },
             .except_clause => {
@@ -298,6 +298,24 @@ pub const Fmt = struct {
                 const block = node.namedChild(1).?;
                 var block_cursor = block.walk();
                 try self.formatNode(writer, &block_cursor, indent + 1);
+
+                const parent = node.parent();
+                if (parent) |p| {
+                    const p_children = p.namedChildCount();
+                    var node_index: ?u32 = null;
+
+                    var i: u32 = 0;
+                    while (i < p_children) : (i += 1) {
+                        if (p.namedChild(i).?.eql(node)) {
+                            node_index = i;
+                            break;
+                        }
+                    }
+
+                    if (node_index != null and node_index.? + 1 < p_children) {
+                        try writer.writeAll("\n");
+                    }
+                }
             },
             .finally_clause => {
                 try writer.writeAll("finally:\n");
