@@ -93,7 +93,7 @@ pub fn main() !void {
 
     try alloc_writer.flush();
 
-    std.debug.print("output:\n{s}\n", .{allocating.written()});
+    std.debug.print("output:\n{s}\noutput end...\n", .{allocating.written()});
 }
 
 fn printNode(node: ts.Node, source: []const u8) void {

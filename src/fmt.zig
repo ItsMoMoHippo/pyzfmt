@@ -23,7 +23,9 @@ pub const Fmt = struct {
 
         switch (node_type) {
             .module, .block => {
+                const is_module = node_type == .module;
                 var first = true;
+
                 if (cursor.gotoFirstChild()) {
                     while (true) {
                         const child = cursor.node();
@@ -54,6 +56,8 @@ pub const Fmt = struct {
 
                         if (!cursor.gotoNextSibling()) break;
                     }
+
+                    if (is_module) try writer.writeAll("\n");
                     _ = cursor.gotoParent();
                 }
             },
@@ -332,7 +336,6 @@ pub const Fmt = struct {
                 const body = node.namedChild(2).?;
                 var body_cursor = body.walk();
                 try self.formatNode(writer, &body_cursor, indent + 1);
-                try writer.writeAll("\n");
 
                 // why does python loop have a possible else clause
                 const possible_else = node.namedChild(3);
@@ -368,9 +371,8 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &true_cursor, indent + 1);
 
                 const children = node.namedChildCount();
-                // if (!(children > 2)) {
-                //     try writer.writeAll("\n");
-                // }
+
+                if (children > 2) try writer.writeAll("\n");
 
                 var i: u32 = 2;
                 while (i < children) : (i += 1) {
@@ -405,7 +407,7 @@ pub const Fmt = struct {
                         }
                     }
 
-                    if (node_index != null and node_index.? + 1 == p_children) {
+                    if (node_index != null and node_index.? + 1 < p_children) {
                         try writer.writeAll("\n");
                     }
                 }
@@ -416,7 +418,6 @@ pub const Fmt = struct {
                 const body = node.namedChild(0).?;
                 var body_cursor = body.walk();
                 try self.formatNode(writer, &body_cursor, indent + 1);
-                try writer.writeAll("\n");
             },
 
             .binary_operator, .comparison_operator, .boolean_operator => {
