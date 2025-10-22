@@ -554,3 +554,211 @@ test "augmented" {
 
     try t.expectEqualStrings(input, allocating.written());
 }
+test "lambda" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/lambda.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "decorator" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/decor.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "imports" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/imports.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "with" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/with.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "try_final" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/try/try_final.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "try_1_exc" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/try/try_exc.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "try_2_exc" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/try/try_exc_exc.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}
+test "try_2_exc_final" {
+    const alloc = t.allocator;
+    const input = @embedFile("test_files/try/try_exc_exc_final.py");
+
+    const lang = tree_sitter_python();
+    defer lang.destroy();
+    const parser = ts.Parser.create();
+    defer parser.destroy();
+    try parser.setLanguage(lang);
+    const tree = parser.parseString(input, null);
+    defer tree.?.destroy();
+
+    var err: std.Io.Writer.Allocating = .init(alloc);
+    var stderr = err.writer;
+    defer err.deinit();
+
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, input.len);
+    defer allocating.deinit();
+    const alloc_writer = &allocating.writer;
+
+    var form: Fmt.Fmt = Fmt.Fmt.init(input, &stderr);
+    try form.format(alloc_writer, tree);
+    try alloc_writer.flush();
+
+    try t.expectEqualStrings(input, allocating.written());
+}

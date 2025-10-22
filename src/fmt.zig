@@ -234,7 +234,7 @@ pub const Fmt = struct {
                 var text_cursor = text.walk();
                 try writer.writeAll("@");
                 try self.formatNode(writer, &text_cursor, indent);
-                try writer.writeAll("@");
+                try writer.writeAll("\n");
             },
 
             .with_statement => {
