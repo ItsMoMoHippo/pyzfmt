@@ -15,6 +15,9 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
+    //TODO: re-do add directory support and multiple inputted files
+    //just silently fail if non-python file found
+
     // check arg count
     const file = argCount(args) catch |err| switch (err) {
         ArgErr.ExtraArgs => {

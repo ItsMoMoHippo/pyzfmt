@@ -87,16 +87,29 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &body_cursor, indent + 1);
             },
             .function_definition => {
+                const children = node.namedChildCount();
+
                 const name = node.namedChild(0).?;
                 const params = node.namedChild(1).?;
-                const body = node.namedChild(2).?;
+
+                const has_ret = children == 4;
+                const ret_type: ?ts.Node = if (has_ret) node.namedChild(2) else null;
+
+                const body = node.namedChild(if (has_ret) 3 else 2).?;
 
                 try writer.writeAll("def ");
+
                 var name_cursor = name.walk();
-                try self.formatNode(writer, &name_cursor, 0);
+                try self.formatNode(writer, &name_cursor, indent);
 
                 var params_cursor = params.walk();
-                try self.formatNode(writer, &params_cursor, 0);
+                try self.formatNode(writer, &params_cursor, indent);
+
+                if (has_ret) {
+                    try writer.writeAll(" -> ");
+                    var ret_cursor = ret_type.?.walk();
+                    try self.formatNode(writer, &ret_cursor, indent);
+                }
 
                 try writer.writeAll(":\n");
 
@@ -138,11 +151,22 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &args_cursor, 0);
             },
             .assignment => {
+                const children = node.namedChildCount();
+                const has_annotation = children == 3;
+
                 const lhs = node.namedChild(0).?;
-                const rhs = node.namedChild(1).?;
+                const middle = if (has_annotation) node.namedChild(1).? else null;
+                const rhs = node.namedChild(if (has_annotation) 2 else 1).?;
 
                 var lhs_cursor = lhs.walk();
                 try self.formatNode(writer, &lhs_cursor, indent);
+
+                if (has_annotation) {
+                    try writer.writeAll(": ");
+                    var middle_cursor = middle.?.walk();
+                    try self.formatNode(writer, &middle_cursor, indent);
+                }
+
                 try writer.writeAll(" = ");
 
                 var rhs_cursor = rhs.walk();
@@ -175,11 +199,7 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &store_cursor, indent);
 
                 try writer.writeAll("[");
-
-                const index = node.namedChild(1).?;
-                var index_cursor = index.walk();
-                try self.formatNode(writer, &index_cursor, indent);
-
+                try self.splatChildrenLua(writer, node);
                 try writer.writeAll("]");
             },
             .default_parameter, .keyword_argument => {
@@ -270,7 +290,6 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &block_cursor, indent + 1);
                 try writer.writeAll("\n");
 
-                // could nearly splat, off by 1
                 const children = node.namedChildCount();
                 var i: u32 = 1;
                 while (i < children) : (i += 1) {
@@ -318,6 +337,7 @@ pub const Fmt = struct {
             },
 
             .lambda => {
+                self.nodeDebugInfo(node);
                 try writer.writeAll("lambda ");
 
                 const param = node.namedChild(0).?;
@@ -484,16 +504,7 @@ pub const Fmt = struct {
 
                 try writer.writeAll(" import ");
 
-                const components = node.namedChildCount();
-                var i: u32 = 1;
-                while (i < components) : (i += 1) {
-                    const comp = node.namedChild(i).?;
-                    var comp_cursor = comp.walk();
-                    try self.formatNode(writer, &comp_cursor, indent);
-                    // so close to being able to use splat
-                    // but 1st child is package so ruins splatting
-                    if (i + 1 < components) try writer.writeAll(", ");
-                }
+                try self.splatChildrenLua(writer, node);
             },
             .wildcard_import => {
                 try writer.writeAll("*");
@@ -503,7 +514,7 @@ pub const Fmt = struct {
                 const text = self.source[node.startByte()..node.endByte()];
                 try writer.writeAll(text);
             },
-            .with_item, .dotted_name, .lambda_parameters, .as_pattern_target => {
+            .with_item, .dotted_name, .as_pattern_target => {
                 const child = node.namedChild(0).?;
                 var child_cursor = child.walk();
                 try self.formatNode(writer, &child_cursor, indent);
@@ -530,7 +541,7 @@ pub const Fmt = struct {
                 var value_cursor = value.walk();
                 try self.formatNode(writer, &value_cursor, 0);
             },
-            .pattern_list => {
+            .pattern_list, .lambda_parameters => {
                 try self.splatChildren(writer, node);
             },
             .expression_list => {
@@ -541,6 +552,42 @@ pub const Fmt = struct {
                 const child = node.namedChild(0).?;
                 var child_cursor = child.walk();
                 try self.formatNode(writer, &child_cursor, indent);
+            },
+            .ellipsis => {
+                try writer.writeAll("...");
+            },
+
+            .type => {
+                const child = node.namedChild(0).?;
+                var child_cursor = child.walk();
+                try self.formatNode(writer, &child_cursor, indent);
+            },
+            .generic_type => {
+                const ident = node.namedChild(0).?;
+                var ident_cursor = ident.walk();
+                try self.formatNode(writer, &ident_cursor, indent);
+
+                try writer.writeAll("[");
+
+                const given_type = node.namedChild(1).?;
+                var type_cursor = given_type.walk();
+                try self.formatNode(writer, &type_cursor, indent);
+
+                try writer.writeAll("]");
+            },
+            .type_parameter => {
+                try self.splatChildren(writer, node);
+            },
+            .typed_parameter => {
+                const ident = node.namedChild(0).?;
+                var indent_cursor = ident.walk();
+                try self.formatNode(writer, &indent_cursor, indent);
+
+                try writer.writeAll(": ");
+
+                const given_type = node.namedChild(1).?;
+                var type_cursor = given_type.walk();
+                try self.formatNode(writer, &type_cursor, indent);
             },
 
             .list_comprehension => {
@@ -605,6 +652,24 @@ pub const Fmt = struct {
     fn splatChildren(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
         const child_count = node.namedChildCount();
         var i: u32 = 0;
+        while (i < child_count) : (i += 1) {
+            const elem = node.namedChild(i).?;
+            var elem_cursor = elem.walk();
+            try self.formatNode(writer, &elem_cursor, 0);
+
+            if (i + 1 < child_count) {
+                try writer.writeAll(", ");
+            }
+        }
+    }
+
+    /// adds all children nodes and seperate with a comma
+    /// useful for writing:
+    /// - Subscript
+    /// - multiple imports from
+    fn splatChildrenLua(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
+        const child_count = node.namedChildCount();
+        var i: u32 = 1;
         while (i < child_count) : (i += 1) {
             const elem = node.namedChild(i).?;
             var elem_cursor = elem.walk();
@@ -712,6 +777,12 @@ const NodeType = enum {
     list_splat_pattern,
     list_pattern,
     tuple_pattern,
+    ellipsis,
+
+    type,
+    generic_type,
+    typed_parameter,
+    type_parameter,
 
     list_comprehension,
     set_comprehension,
