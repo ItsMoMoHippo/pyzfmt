@@ -337,7 +337,6 @@ pub const Fmt = struct {
             },
 
             .lambda => {
-                self.nodeDebugInfo(node);
                 try writer.writeAll("lambda ");
 
                 const param = node.namedChild(0).?;
@@ -510,10 +509,59 @@ pub const Fmt = struct {
                 try writer.writeAll("*");
             },
 
-            .identifier, .integer, .float, .comment, .true, .false, .none, .string => {
+            .identifier, .integer, .float, .comment, .true, .false, .none, .string_content => {
                 const text = self.source[node.startByte()..node.endByte()];
                 try writer.writeAll(text);
             },
+
+            .string => {
+                var i: u32 = 0;
+                while (i < node.namedChildCount()) : (i += 1) {
+                    const child = node.namedChild(i).?;
+                    var child_cursor = child.walk();
+                    try self.formatNode(writer, &child_cursor, 0);
+                }
+            },
+            .string_start => {
+                const text = self.source[node.startByte()..node.endByte()];
+                if (std.mem.eql(u8, text, "f\"")) {
+                    try writer.writeAll("f\"");
+                } else {
+                    try writer.writeAll("\"");
+                }
+            },
+            .string_end => {
+                try writer.writeAll("\"");
+            },
+            .interpolation => {
+                try writer.writeAll("{");
+                var child_cursor = node.namedChild(0).?.walk();
+                try self.formatNode(writer, &child_cursor, 0);
+                try writer.writeAll("}");
+            },
+            .concatenated_string => {
+                const text = self.source[node.startByte()..node.endByte()];
+                const multiline = std.mem.containsAtLeastScalar(u8, text, 1, '\n');
+
+                var i: u32 = 0;
+                const children = node.namedChildCount();
+                while (i < children) : (i += 1) {
+                    // parens do new lines
+                    if (multiline) {
+                        try writer.writeAll("\n");
+                        try writeIndent(writer, indent + 1);
+                    }
+
+                    var child_cursor = node.namedChild(i).?.walk();
+                    try self.formatNode(writer, &child_cursor, indent);
+
+                    // non parens just do space
+                    if (i + 1 < children and !multiline) try writer.writeAll(" ");
+                }
+                // final new line before closing parens
+                if (multiline) try writer.writeAll("\n");
+            },
+
             .with_item, .dotted_name, .as_pattern_target => {
                 const child = node.namedChild(0).?;
                 var child_cursor = child.walk();
@@ -763,7 +811,14 @@ const NodeType = enum {
     true,
     false,
     none,
+
     string,
+    string_start,
+    string_end,
+    string_content,
+    concatenated_string,
+    interpolation,
+
     with_item,
     dotted_name,
     lambda_parameters,
