@@ -6,12 +6,12 @@ callback: Callable[[int, str], bool] = lambda x, s: x > 0
 
 # function with type annotations
 def process(name: str, age: int, scores: list[float]) -> dict[str, int]:
-    return {"count": len(scores)}
+    return {"count" : len(scores)}
 
 # variable annotations
 count: int = 0
 names: list[str] = ["Alice", "Bob"]
-mapping: dict[str, int] = {"a": 1, "b": 2}
+mapping: dict[str, int] = {"a" : 1, "b" : 2}
 
 # optional and union types
 from typing import Optional, Union

@@ -524,14 +524,20 @@ pub const Fmt = struct {
             },
             .string_start => {
                 const text = self.source[node.startByte()..node.endByte()];
-                if (std.mem.eql(u8, text, "f\"")) {
-                    try writer.writeAll("f\"");
-                } else {
-                    try writer.writeAll("\"");
-                }
+
+                var prefix_end: u32 = 0;
+                while (prefix_end < text.len and std.ascii.isAlphabetic(text[prefix_end])) : (prefix_end += 1) {}
+
+                const prefix = text[0..prefix_end];
+                const is_mult = std.mem.endsWith(u8, text, "\"\"\"") or std.mem.endsWith(u8, text, "\'\'\'");
+
+                if (prefix.len > 0) try writer.writeAll(prefix);
+                try writer.writeAll(if (is_mult) "\"\"\"" else "\"");
             },
             .string_end => {
-                try writer.writeAll("\"");
+                const text = self.source[node.startByte()..node.endByte()];
+                const is_mult = std.mem.eql(u8, text, "\"\"\"") or std.mem.eql(u8, text, "\'\'\'");
+                try writer.writeAll(if (is_mult) "\"\"\"" else "\"");
             },
             .interpolation => {
                 try writer.writeAll("{");
