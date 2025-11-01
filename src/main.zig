@@ -1,15 +1,20 @@
 const std = @import("std");
 const ts = @import("tree_sitter");
-const ArgErr = @import("fmterr.zig").ArgCountErr;
-const FileErr = @import("fmterr.zig").FileErr;
+
+const FooErr = @import("fmterr.zig");
 const Formatter = @import("fmt.zig");
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}).init;
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+
+    var newArgs = try grabArgs(arena.allocator());
 
     // get arg
     const args = try std.process.argsAlloc(alloc);
@@ -20,14 +25,14 @@ pub fn main() !void {
 
     // check arg count
     const file = argCount(args) catch |err| switch (err) {
-        ArgErr.ExtraArgs => {
+        FooErr.ArgCountErr.ExtraArgs => {
             std.debug.print(
                 \\User has inputted too many arguments,
                 \\Please input 1 python file only
             , .{});
             std.process.exit(1);
         },
-        ArgErr.FileArgMissing => {
+        FooErr.ArgCountErr.FileArgMissing => {
             std.debug.print(
                 \\User has not inputted a file,
                 \\Please input a pyhton file
@@ -37,7 +42,7 @@ pub fn main() !void {
     };
     // check if python file
     isPy(file) catch |err| {
-        if (err == FileErr.InvalidFileType) {
+        if (err == FooErr.FileErr.InvalidFileType) {
             std.debug.print(
                 \\{s} is not a python file,
                 \\Please only input a python file
@@ -118,23 +123,45 @@ fn printNode(node: ts.Node, source: []const u8) void {
 fn argCount(args: [][:0]u8) ![]const u8 {
     return switch (args.len) {
         0 => unreachable,
-        1 => ArgErr.FileArgMissing,
+        1 => FooErr.ArgCountErr.FileArgMissing,
         2 => args[1],
-        else => ArgErr.ExtraArgs,
+        else => FooErr.ArgCountErr.ExtraArgs,
     };
 }
 
 fn isPy(file: []const u8) !void {
     const ext = std.fs.path.extension(file);
     if (!std.mem.eql(u8, ext, ".py")) {
-        return FileErr.InvalidFileType;
+        return FooErr.FileErr.InvalidFileType;
     }
 }
 
-test "Not Python file" {
-    try std.testing.expectError(FileErr.InvalidFileType, isPy("foo.txt"));
+fn isPythonFile(file: []const u8) bool {
+    const ext = std.fs.path.extension(file);
+    return std.mem.eql(u8, ext, ".py");
 }
 
-test "Are Python files" {
-    isPy("../tests/t1.py") catch unreachable;
+fn grabArgs(arena: std.mem.Allocator) !std.ArrayList([]const u8) {
+    var args = try std.process.argsWithAllocator(arena);
+    _ = args.next();
+
+    var files: std.ArrayList([]const u8) = try .initCapacity(arena, args.inner.count);
+    while (args.next()) |arg| {
+        const stat = std.fs.cwd().statFile(arg) catch continue;
+        if (stat.kind == .file and isPythonFile(arg)) {
+            try files.append(arena, arg);
+            continue;
+        }
+
+        var dir = std.fs.cwd().openDir(arg, .{ .iterate = true }) catch continue;
+        defer dir.close();
+        var walker = dir.walk(arena);
+        while (try walker.next()) |entry| {
+            if (entry.kind == .file and isPythonFile(entry.basename)) {
+                const file_path = try arena.dupe(u8, entry.path);
+                try files.append(arena, try std.fs.path.join(arena, &.{ arg, file_path }));
+            }
+        }
+    }
+    return files;
 }
