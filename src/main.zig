@@ -70,7 +70,6 @@ pub fn main() !void {
     }
 }
 
-//TODO: eventually remove debug ---------------------------------------------
 fn printNode(node: ts.Node, source: []const u8) void {
     const kind = node.kind();
     const start = node.startByte();
