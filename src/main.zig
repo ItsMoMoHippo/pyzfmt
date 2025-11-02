@@ -28,41 +28,7 @@ pub fn main() !void {
     var stderr_writer = std.fs.File.stderr().writer(&.{});
     const stderr = &stderr_writer.interface;
 
-    // TODO: remove -----------------------------------------------------------
-
-    // // get arg
-    // const args = try std.process.argsAlloc(alloc);
-    // defer std.process.argsFree(alloc, args);
-    // // check arg count
-    // const file = argCount(args) catch |err| switch (err) {
-    //     FooErr.ArgCountErr.ExtraArgs => {
-    //         std.debug.print(
-    //             \\User has inputted too many arguments,
-    //             \\Please input 1 python file only
-    //         , .{});
-    //         std.process.exit(1);
-    //     },
-    //     FooErr.ArgCountErr.FileArgMissing => {
-    //         std.debug.print(
-    //             \\User has not inputted a file,
-    //             \\Please input a pyhton file
-    //         , .{});
-    //         std.process.exit(1);
-    //     },
-    // };
-    // // check if python file
-    // isPy(file) catch |err| {
-    //     if (err == FooErr.FileErr.InvalidFileType) {
-    //         std.debug.print(
-    //             \\{s} is not a python file,
-    //             \\Please only input a python file
-    //         , .{file});
-    //         std.process.exit(1);
-    //     }
-    // };
-
-    // ------------------------------------------------------------------
-
+    // set up arena for each file parse
     var fmtSetupArena = std.heap.ArenaAllocator.init(alloc);
     const fmtArena = fmtSetupArena.allocator();
     defer fmtSetupArena.deinit();
@@ -102,50 +68,6 @@ pub fn main() !void {
 
         std.debug.print("output:\n{s}\noutput end...\n", .{arena_allocating.written()});
     }
-
-    //TODO: remove----------------------------------------------------------------
-
-    // const python_file = std.fs.cwd().openFile(file, .{}) catch |err| switch (err) {
-    //     std.fs.File.OpenError.FileNotFound => {
-    //         std.debug.print("file {s} not found\n", .{file});
-    //         std.process.exit(1);
-    //     },
-    //     std.fs.File.OpenError.AccessDenied, std.fs.File.OpenError.PermissionDenied => {
-    //         std.debug.print("file is inaccessible\n", .{});
-    //         std.process.exit(1);
-    //     },
-    //     else => return err,
-    // };
-    // defer python_file.close();
-    //
-    // //read till end of file
-    // var file_reader = python_file.reader(&.{});
-    // const buf = try file_reader.interface.allocRemaining(alloc, .unlimited);
-    // defer alloc.free(buf);
-    //
-    //
-    // // let ts parse soure code
-    // const tree = parser.parseString(buf[0..buf.len], null);
-    // defer tree.?.destroy();
-    //
-    // const root_node = tree.?.rootNode();
-    // printNode(root_node, buf[0..buf.len]);
-    //
-    // std.debug.print("\n\n", .{});
-    //
-    // // writer for wrting into file ?
-    // // var file_writer :std.Io.Writer = std.fs.File.Writer.init(python_file, &.{});
-    //
-    // var allocating: std.Io.Writer.Allocating = try .initCapacity(alloc, buf.len);
-    // defer allocating.deinit();
-    // const alloc_writer = &allocating.writer;
-    //
-    // var py_formatter = Formatter.Fmt.init(buf[0..buf.len], stderr);
-    // try py_formatter.format(alloc_writer, tree);
-    //
-    // try alloc_writer.flush();
-
-    //---------------------------------------------------------------------------
 }
 
 //TODO: eventually remove debug ---------------------------------------------
@@ -164,32 +86,16 @@ fn printNode(node: ts.Node, source: []const u8) void {
         }
     }
 }
-// --------------------------------------------------------------------------
 
-//TODO: remove useless functions now ----------------------------------------
-fn argCount(args: [][:0]u8) ![]const u8 {
-    return switch (args.len) {
-        0 => unreachable,
-        1 => FmtErr.ArgCountErr.FileArgMissing,
-        2 => args[1],
-        else => FmtErr.ArgCountErr.ExtraArgs,
-    };
-}
-
-fn isPy(file: []const u8) !void {
-    const ext = std.fs.path.extension(file);
-    if (!std.mem.eql(u8, ext, ".py")) {
-        return FmtErr.FileErr.InvalidFileType;
-    }
-}
-//--------------------------------------------------------------------------
-
-//the new useful stuff------------------------------------------------------
+/// Checks if a given filename is a python file
 fn isPythonFile(file: []const u8) bool {
     const ext = std.fs.path.extension(file);
     return std.mem.eql(u8, ext, ".py");
 }
 
+/// Gets program arguments
+/// Preferably using an arena allocator
+/// Uses iterator version
 fn grabArgs(arena: std.mem.Allocator) !std.ArrayList([]const u8) {
     var args = try std.process.argsWithAllocator(arena);
     _ = args.next();
