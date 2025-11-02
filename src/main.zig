@@ -124,4 +124,3 @@ fn grabArgs(arena: std.mem.Allocator) !std.ArrayList([]const u8) {
     }
     return files;
 }
-//---------------------------------------------------------------------------
