@@ -45,13 +45,17 @@ pub fn main() !void {
         const ast_tree = parser.parseString(file_buf[0..file_buf.len], null);
         defer ast_tree.?.destroy();
 
+        if (ast_tree.?.rootNode().hasError()) {
+            continue;
+        }
+
         // writer
         var arena_allocating: std.Io.Writer.Allocating = try .initCapacity(fmtArena, file_buf.len);
         const arena_alloc_writer = &arena_allocating.writer;
 
         //TODO: switch to file writer for release
         //
-        // var writer_buf: [file_buf.len * 2]u8 = undefined;
+        // var writer_buf: [2048]u8 = undefined;
         // var writer_root = file_handle.writer(&writer_buf);
         // const file_writer = &writer_root.interface;
 
