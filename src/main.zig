@@ -1,7 +1,6 @@
 const std = @import("std");
 const ts = @import("tree_sitter");
 
-const FmtErr = @import("fmterr.zig");
 const Formatter = @import("fmt.zig");
 
 extern fn tree_sitter_python() callconv(.c) *ts.Language;
@@ -23,10 +22,6 @@ pub fn main() !void {
     const parser = ts.Parser.create();
     defer parser.destroy();
     try parser.setLanguage(language);
-
-    //TODO: might remove the need
-    var stderr_writer = std.fs.File.stderr().writer(&.{});
-    const stderr = &stderr_writer.interface;
 
     // set up arena for each file parse
     var fmtSetupArena = std.heap.ArenaAllocator.init(alloc);
@@ -52,16 +47,15 @@ pub fn main() !void {
 
         // writer
         var arena_allocating: std.Io.Writer.Allocating = try .initCapacity(fmtArena, file_buf.len);
-        // defer arena_allocating.deinit(); //maybe don't need this defer
         const arena_alloc_writer = &arena_allocating.writer;
 
         //TODO: switch to file writer for release
         //
-        // var writer_buf :[file_buf.len*2]u8 = undefined;
+        // var writer_buf: [file_buf.len * 2]u8 = undefined;
         // var writer_root = file_handle.writer(&writer_buf);
         // const file_writer = &writer_root.interface;
 
-        var pyFmt = Formatter.Fmt.init(file_buf[0..file_buf.len], stderr);
+        var pyFmt = Formatter.Fmt.init(file_buf[0..file_buf.len]);
         try pyFmt.format(arena_alloc_writer, ast_tree);
         // try pyFmt.format(file_writer, ast_tree);
 

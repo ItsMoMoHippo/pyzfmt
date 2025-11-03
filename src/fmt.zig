@@ -3,20 +3,21 @@ const ts = @import("tree_sitter");
 
 pub const Fmt = struct {
     source: []const u8,
-    stderr: *std.Io.Writer,
 
-    pub fn init(source: []const u8, stderr: *std.Io.Writer) Fmt {
+    /// Returns a Fmt struct
+    pub fn init(source: []const u8) Fmt {
         return .{
             .source = source,
-            .stderr = stderr,
         };
     }
 
+    /// Write to the writer the formatted ast
     pub fn format(self: *Fmt, writer: *std.Io.Writer, tree: ?*ts.Tree) error{WriteFailed}!void {
         var cursor = tree.?.walk();
         try self.formatNode(writer, &cursor, 0);
     }
 
+    /// Format the given node, switches upon the node type and does the appropriate styling
     fn formatNode(self: *Fmt, writer: *std.Io.Writer, cursor: *ts.TreeCursor, indent: usize) error{WriteFailed}!void {
         const node = cursor.node();
         const node_type = NodeType.fromTsNode(node);
@@ -687,8 +688,9 @@ pub const Fmt = struct {
             },
 
             .ERROR => {
-                std.debug.print("error\n", .{});
                 //TODO: just abort operation, maybe say which line is error
+                const text = self.source[node.startByte()..node.endByte()];
+                try writer.writeAll(text);
             },
             else => {
                 std.debug.print("{s} node found\n", .{node.kind()});
