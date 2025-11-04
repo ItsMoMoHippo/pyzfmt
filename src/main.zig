@@ -64,7 +64,7 @@ pub fn main() !void {
         // try pyFmt.format(file_writer, ast_tree);
 
         try arena_alloc_writer.flush();
-        // try file_writer.flush();
+        // try writer_root.end();
 
         std.debug.print("output:\n{s}\noutput end...\n", .{arena_allocating.written()});
     }
