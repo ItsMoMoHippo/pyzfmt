@@ -11,6 +11,11 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
+    if (try checkHelpFlag(alloc)) {
+        try printHelp();
+        return;
+    }
+
     // args
     var argArena = std.heap.ArenaAllocator.init(alloc);
     defer argArena.deinit();
@@ -121,4 +126,36 @@ fn grabArgs(arena: std.mem.Allocator) !std.ArrayList([]const u8) {
         }
     }
     return files;
+}
+
+fn checkHelpFlag(allocator: std.mem.Allocator) !bool {
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+
+    _ = args.next();
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "-h") or
+            std.mem.eql(u8, arg, "--help") or
+            std.mem.eql(u8, arg, "help"))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn printHelp() !void {
+    var stdout_pre = std.fs.File.stdout().writer(&.{});
+    const stdout_writer = &stdout_pre.interface;
+
+    try stdout_writer.print(
+        \\Usage: pyzfmt [options] <files/directories>
+        \\ 
+        \\Options:
+        \\  -h, --help      Show this help message
+        \\
+        \\Formats python files
+        \\
+    , .{});
 }
