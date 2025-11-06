@@ -128,7 +128,7 @@ pub const Fmt = struct {
             },
             .parameters, .argument_list, .tuple, .tuple_pattern => {
                 try writer.writeAll("(");
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
                 try writer.writeAll(")");
             },
             .return_statement => {
@@ -200,7 +200,7 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &store_cursor, indent);
 
                 try writer.writeAll("[");
-                try self.splatChildrenLua(writer, node);
+                try self.splatChildrenCommaLua(writer, node);
                 try writer.writeAll("]");
             },
             .default_parameter, .keyword_argument => {
@@ -269,7 +269,7 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &block_cursor, indent + 1);
             },
             .with_clause => {
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
                 try writer.writeAll(":\n");
             },
             .as_pattern => {
@@ -504,7 +504,7 @@ pub const Fmt = struct {
 
                 try writer.writeAll(" import ");
 
-                try self.splatChildrenLua(writer, node);
+                try self.splatChildrenCommaLua(writer, node);
             },
             .wildcard_import => {
                 try writer.writeAll("*");
@@ -576,12 +576,12 @@ pub const Fmt = struct {
             },
             .list, .list_pattern => {
                 try writer.writeAll("[");
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
                 try writer.writeAll("]");
             },
             .dictionary, .set => {
                 try writer.writeAll("{");
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
                 try writer.writeAll("}");
             },
             .pair => {
@@ -597,10 +597,10 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &value_cursor, 0);
             },
             .pattern_list, .lambda_parameters => {
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
             },
             .expression_list => {
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
             },
             .list_splat_pattern => {
                 try writer.writeAll("*");
@@ -631,7 +631,7 @@ pub const Fmt = struct {
                 try writer.writeAll("]");
             },
             .type_parameter => {
-                try self.splatChildren(writer, node);
+                try self.splatChildrenComma(writer, node);
             },
             .typed_parameter => {
                 const ident = node.namedChild(0).?;
@@ -687,11 +687,21 @@ pub const Fmt = struct {
                 try self.formatNode(writer, &child_cursor, indent);
             },
 
-            .ERROR => {
-                //TODO: just abort operation, maybe say which line is error
-                const text = self.source[node.startByte()..node.endByte()];
-                try writer.writeAll(text);
+            .assert_statement => {
+                try writer.writeAll("assert ");
+
+                const assert = node.namedChild(0).?;
+                var assert_cursor = assert.walk();
+                try self.formatNode(writer, &assert_cursor, indent);
+
+                if (node.namedChildCount() == 2) {
+                    try writer.writeAll(", ");
+                    const str = node.namedChild(1).?;
+                    var str_cursor = str.walk();
+                    try self.formatNode(writer, &str_cursor, indent);
+                }
             },
+
             else => {
                 std.debug.print("{s} node found\n", .{node.kind()});
             },
@@ -705,7 +715,7 @@ pub const Fmt = struct {
     /// - Sets
     /// - Dicts
     /// - Parameters
-    fn splatChildren(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
+    fn splatChildrenComma(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
         const child_count = node.namedChildCount();
         var i: u32 = 0;
         while (i < child_count) : (i += 1) {
@@ -723,7 +733,7 @@ pub const Fmt = struct {
     /// useful for writing:
     /// - Subscript
     /// - multiple imports from
-    fn splatChildrenLua(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
+    fn splatChildrenCommaLua(self: *Fmt, writer: *std.Io.Writer, node: ts.Node) error{WriteFailed}!void {
         const child_count = node.namedChildCount();
         var i: u32 = 1;
         while (i < child_count) : (i += 1) {
@@ -853,7 +863,8 @@ const NodeType = enum {
     for_in_clause,
     if_clause,
 
-    ERROR,
+    assert_statement,
+
     unknown,
 
     /// translate TS node kinds to enums
